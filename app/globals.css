@@ -1,27 +1,118 @@
 @import "tailwindcss";
-@plugin "daisyui";
-
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+@plugin "daisyui" {
+  themes: light --default, dark --prefersdark;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+  --color-brand-blue: var(--brand-blue);
+  --color-brand-sky: var(--brand-sky);
+  --color-brand-lemon: var(--brand-lemon);
+  --color-brand-sun: var(--brand-sun);
+}
+
+@custom-variant short {
+  @media (max-height: 740px) {
+    @slot;
+  }
+}
+
+@custom-variant tiny-height {
+  @media (max-height: 600px) {
+    @slot;
+  }
+}
+
+/* Brand palette: #006199, #8ACFF8, #F4EB6C, #FFD444. */
+:root,
+[data-theme="light"] {
+  color-scheme: light;
+  --brand-blue: #006199;
+  --brand-sky: #8acff8;
+  --brand-lemon: #f4eb6c;
+  --brand-sun: #ffd444;
+  --canvas: #f7fbfd;
+  --surface: #ffffff;
+  --ink: #143345;
+  --muted: #587484;
+  --line: #d9e8ef;
+  --visual-top: #b9e8ff;
+  --visual-bottom: #78c9f6;
+  --color-base-100: #ffffff;
+  --color-base-200: #f3f9fc;
+  --color-base-300: #e3f0f6;
+  --color-base-content: #143345;
+  --color-primary: #006199;
+  --color-primary-content: #ffffff;
+  --color-secondary: #8acff8;
+  --color-secondary-content: #143345;
+  --color-accent: #ffd444;
+  --color-accent-content: #143345;
+  --radius-field: 0.9rem;
+  --radius-box: 1.5rem;
+}
+
+/* Dark counterpart keeps sky blue and yellow bright against navy surfaces. */
+[data-theme="dark"] {
+  color-scheme: dark;
+  --canvas: #071b29;
+  --surface: #102b3c;
+  --ink: #eff9ff;
+  --muted: #b6ceda;
+  --line: #2b5063;
+  --visual-top: #154969;
+  --visual-bottom: #0b2e47;
+  --color-base-100: #102b3c;
+  --color-base-200: #15394d;
+  --color-base-300: #20465a;
+  --color-base-content: #eff9ff;
+  --color-primary: #8acff8;
+  --color-primary-content: #082436;
+  --color-secondary: #006199;
+  --color-secondary-content: #eff9ff;
+  --color-accent: #ffd444;
+  --color-accent-content: #143345;
+  --radius-field: 0.9rem;
+  --radius-box: 1.5rem;
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+  :root:not([data-theme]) {
+    color-scheme: dark;
+    --canvas: #071b29;
+    --surface: #102b3c;
+    --ink: #eff9ff;
+    --muted: #b6ceda;
+    --line: #2b5063;
+    --visual-top: #154969;
+    --visual-bottom: #0b2e47;
+    --color-base-100: #102b3c;
+    --color-base-200: #15394d;
+    --color-base-300: #20465a;
+    --color-base-content: #eff9ff;
+    --color-primary: #8acff8;
+    --color-primary-content: #082436;
+    --color-secondary: #006199;
+    --color-secondary-content: #eff9ff;
+    --color-accent: #ffd444;
+    --color-accent-content: #143345;
+    --radius-field: 0.9rem;
+    --radius-box: 1.5rem;
   }
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
+  min-height: 100vh;
+  background: var(--canvas);
+  color: var(--ink);
   font-family: Arial, Helvetica, sans-serif;
+}
+
+:focus-visible {
+  outline: 3px solid var(--color-primary);
+  outline-offset: 3px;
 }
