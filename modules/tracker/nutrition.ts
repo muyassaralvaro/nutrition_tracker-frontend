@@ -1,8 +1,17 @@
 export const NUTRIENTS = ["calories", "protein", "carbs", "fat", "fiber", "sodium", "potassium", "calcium", "iron"] as const;
 export type Nutrient = (typeof NUTRIENTS)[number];
+export const MACRO_NUTRIENTS: readonly Nutrient[] = ["calories", "protein", "carbs", "fat"];
 export const NUTRIENT_LIMITS: Record<Nutrient, number> = { calories: 6000, protein: 1000, carbs: 1500, fat: 800, fiber: 200, sodium: 20000, potassium: 20000, calcium: 10000, iron: 500 };
 export type NutrientAmounts = Record<Nutrient, number>;
 export type LoggedAmounts = Record<Nutrient, number | null>;
+
+export function scalePortion(nutrients: Record<Nutrient, string>, fromGrams: number, toGrams: number): Record<Nutrient, string> {
+  if (!Number.isFinite(fromGrams) || fromGrams <= 0 || !Number.isFinite(toGrams) || toGrams <= 0) return nutrients;
+  return Object.fromEntries(NUTRIENTS.map((key) => {
+    const value = Number(nutrients[key]);
+    return [key, nutrients[key] === "" || !Number.isFinite(value) ? nutrients[key] : String(Math.round(value * toGrams / fromGrams * 100) / 100)];
+  })) as Record<Nutrient, string>;
+}
 export type Goal = "" | "lose" | "maintain" | "gain";
 export type BodyBuild = "" | "lean" | "soft" | "stocky" | "muscular";
 export type ActivityType = "" | "daily" | "cardio" | "strength" | "mixed";
@@ -48,7 +57,7 @@ export function estimateTargets(input: PlanInputs): NutrientAmounts | null {
   const { age, heightCm, weightKg, sex, goal, build, activityMinutes, activityType } = input;
   if (age === null || age < 18 || age > 120 || heightCm === null || heightCm < 80 || heightCm > 250 || weightKg === null || weightKg < 20 || weightKg > 500 || !sex || !goal || !build || activityMinutes === null || activityMinutes < 0 || activityMinutes > 240 || !activityType) return null;
 
-  // ponytail: Activity bands are editable estimates; replace with validated workout history and clinician-approved planning later.
+  // ponytail: Activity bands are editable estimates; revise with validated nutrition guidance when needed.
   const intensity = { daily: 0.5, cardio: 1.2, strength: 1, mixed: 1 }[activityType];
   const activeMinutes = activityMinutes * intensity;
   const multiplier = activeMinutes < 20 ? 1.2 : activeMinutes < 45 ? 1.375 : activeMinutes < 90 ? 1.55 : 1.725;

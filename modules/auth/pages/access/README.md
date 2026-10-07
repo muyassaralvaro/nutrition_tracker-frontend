@@ -1,3 +1,3 @@
 # Access page
 
-Routes: `/login` and `/register`, selected by `mode`. Sign-in opens `/home` as an unauthenticated preview. Native input constraints and local checks show floating toasts; backend validation remains required when auth is added.
+Owns responsive phone login, local-only phone registration, and Google OAuth redirect. Phone input removes trunk zero and sends E.164. Laravel errors mark fields; floating toasts report failures.

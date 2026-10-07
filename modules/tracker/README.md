@@ -1,3 +1,5 @@
-# Tracker preview
+# Tracker
 
-Routes: `/home`, `/calendar`, `/camera`, `/profile`, `/settings`. `TrackerShell` owns shared navigation. `tracker-data.ts` stores profile, weight, and meal values in browser `sessionStorage`; no server data or authenticated session exists yet. `nutrition.ts` calculates editable adult targets and daily completion from recorded values. Camera capture and upload show a temporary photo, then an editable nutrition form. Photo and AI estimates are not saved or generated yet. Connect Laravel auth, food catalog, photo analysis, and account actions before production use.
+`TrackerShell` guards `/home`, `/calendar`, `/camera`, `/profile`, and `/settings` with `/api/v1/me`. `tracker-data.ts` reads profile, targets, weights, meals, and day summaries from Laravel. Calendar statuses use `/api/v1/calendar`; selected days use `/api/v1/days/{date}`. No nutrition data uses browser storage.
+
+Camera keeps photo visible while queued analysis runs. AI estimates one dish with calories and nutrients. Users edit the estimate before saving; confirmed dish descriptions and nutrition become references for later scans. Account actions call Laravel. Avatar upload and contact support remain pending backend endpoints.

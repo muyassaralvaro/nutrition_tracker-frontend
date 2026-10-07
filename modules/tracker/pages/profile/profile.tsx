@@ -1,27 +1,30 @@
 "use client";
 
-import { useRef, useState, type ChangeEvent } from "react";
+import { useMemo, useRef, useState, type ChangeEvent } from "react";
 import Image from "next/image";
 import { useLanguage } from "@/shared/language";
 import { useToast } from "@/shared/components/toast/ToastProvider";
+import { errorText } from "@/shared/api-client";
 import { WeightCheckIn } from "../../components/WeightCheckIn";
-import { displayHeight, displayWeight, feetAndInches, NUTRIENTS } from "../../nutrition";
+import { displayHeight, displayWeight, feetAndInches, MACRO_NUTRIENTS, NUTRIENTS } from "../../nutrition";
 import { nutrientLabels, nutrientUnits } from "../../nutrition-ui";
 import { isProfileComplete, saveAvatar, useTrackerData } from "../../tracker-data";
 import { ProfileSetup } from "./ProfileSetup";
+import { WeightHistoryChart } from "./WeightHistoryChart";
+import { formatWeightDate } from "./weight-history";
 
 const copy = {
   en: {
-    eyebrow: "YOUR PROFILE", member: "Your Nourish space", newMember: "Your space starts here", status: "Personal plan", missing: "Finish setup to see your plan", start: "Build my plan", edit: "Edit plan", photo: "Change profile photo", photoError: "Choose a JPG, PNG, or WebP photo under 3 MB.",
+    eyebrow: "YOUR PROFILE", member: "Your Nourish space", newMember: "Your space starts here", status: "Personal plan", missing: "Finish setup to see your plan", start: "Build my plan", edit: "Edit plan", photo: "Change profile photo", photoError: "Choose a JPG, PNG, or WebP photo under 3 MB.", photoSaved: "Profile photo saved.",
     basics: "Your details", age: "Age", height: "Height", weight: "Current weight", bodyFat: "Body fat", noData: "Not set", years: "years", cm: "cm", kg: "kg",
     direction: "Your direction", goal: "Goal", goalWeight: "Goal weight", build: "Body shape", activity: "Daily activity", minutes: "min/day", goals: { lose: "Lose weight", maintain: "Maintain weight", gain: "Gain weight" }, builds: { lean: "Lean", soft: "Lean, softer middle", stocky: "Broad build", muscular: "Muscular" }, activities: { daily: "Everyday movement", cardio: "Cardio", strength: "Strength", mixed: "Mixed" },
-    targets: "Your daily targets", targetHint: "Editable starting values. Sodium is a limit; other values are targets.", history: "Weight history", historyHint: "Your latest check-ins", emptyHistory: "No weight check-ins yet.", privacy: "Preview data stays in this browser tab and clears on log out.",
+    targets: "Your daily targets", targetHint: "Editable starting values. Sodium is a limit; other values are targets.", history: "Weight history", historyHint: "Your latest check-ins", historyTrend: "Weight over time", firstCheckIn: "First check-in", lastCheckIn: "Last check-in", sinceLast: "Since last check-in", checkIns: "check-ins", emptyHistory: "No weight check-ins yet.", goalProgress: "Goal progress", toGoal: "to goal", goalLine: "Goal weight", privacy: "Profile, weight, and photo are saved to your account. Your photo stays private and can be changed here.",
   },
   id: {
-    eyebrow: "PROFILMU", member: "Ruang Nourish milikmu", newMember: "Ruangmu dimulai di sini", status: "Rencana pribadi", missing: "Lengkapi profil untuk melihat rencana", start: "Buat rencana", edit: "Ubah rencana", photo: "Ganti foto profil", photoError: "Pilih foto JPG, PNG, atau WebP di bawah 3 MB.",
+    eyebrow: "PROFILMU", member: "Ruang Nourish milikmu", newMember: "Ruangmu dimulai di sini", status: "Rencana pribadi", missing: "Lengkapi profil untuk melihat rencana", start: "Buat rencana", edit: "Ubah rencana", photo: "Ganti foto profil", photoError: "Pilih foto JPG, PNG, atau WebP di bawah 3 MB.", photoSaved: "Foto profil tersimpan.",
     basics: "Data dirimu", age: "Usia", height: "Tinggi", weight: "Berat saat ini", bodyFat: "Lemak tubuh", noData: "Belum diisi", years: "tahun", cm: "cm", kg: "kg",
     direction: "Arah tujuan", goal: "Tujuan", goalWeight: "Berat tujuan", build: "Bentuk tubuh", activity: "Aktivitas harian", minutes: "menit/hari", goals: { lose: "Turunkan berat", maintain: "Jaga berat", gain: "Tambah berat" }, builds: { lean: "Ramping", soft: "Ramping, perut lebih lembut", stocky: "Badan lebar", muscular: "Berotot" }, activities: { daily: "Gerak sehari-hari", cardio: "Kardio", strength: "Latihan beban", mixed: "Campuran" },
-    targets: "Target harianmu", targetHint: "Angka awal yang bisa diubah. Natrium adalah batas; nilai lain adalah target.", history: "Riwayat berat", historyHint: "Catatan terbarumu", emptyHistory: "Belum ada catatan berat.", privacy: "Data pratinjau tersimpan di tab ini dan terhapus saat keluar.",
+    targets: "Target harianmu", targetHint: "Angka awal yang bisa diubah. Natrium adalah batas; nilai lain adalah target.", history: "Riwayat berat", historyHint: "Catatan terbarumu", historyTrend: "Berat dari waktu ke waktu", firstCheckIn: "Catatan pertama", lastCheckIn: "Terakhir dicatat", sinceLast: "Sejak catatan lalu", checkIns: "catatan", emptyHistory: "Belum ada catatan berat.", goalProgress: "Progres target", toGoal: "menuju target", goalLine: "Berat tujuan", privacy: "Profil, berat, dan foto tersimpan di akunmu. Foto tetap privat dan bisa diganti di sini.",
   },
 } as const;
 
@@ -33,10 +36,18 @@ export function ProfilePage() {
   const complete = isProfileComplete(data);
   const latest = weights.at(-1);
   const [editing, setEditing] = useState(false);
+  const [photoBusy, setPhotoBusy] = useState(false);
   const photoInput = useRef<HTMLInputElement>(null);
   const showToast = useToast();
   const number = new Intl.NumberFormat(language === "id" ? "id-ID" : "en-US", { maximumFractionDigits: 1 });
   const weightUnit = profile.unitSystem === "imperial" ? "lb" : "kg";
+  const recentWeights = useMemo(() => weights.slice(-5), [weights]);
+  const previous = weights.at(-2);
+  const change = latest && previous ? displayWeight(latest.kg - previous.kg, profile.unitSystem) : null;
+  const goalKg = profile.goalWeightKg;
+  const first = weights.at(0);
+  const toGoal = latest && goalKg !== null ? displayWeight(Math.abs(latest.kg - goalKg), profile.unitSystem) : null;
+  const progress = latest && goalKg !== null && first && first.kg !== goalKg ? Math.min(100, Math.max(0, ((first.kg - latest.kg) / (first.kg - goalKg)) * 100)) : null;
 
   async function choosePhoto(event: ChangeEvent<HTMLInputElement>) {
     const file = event.currentTarget.files?.[0];
@@ -46,19 +57,24 @@ export function ProfilePage() {
       showToast({ en: copy.en.photoError, id: copy.id.photoError }, "error");
       return;
     }
+    setPhotoBusy(true);
     try {
       const bitmap = await createImageBitmap(file);
-      const canvas = document.createElement("canvas");
-      canvas.width = 160; canvas.height = 160;
-      const context = canvas.getContext("2d");
-      if (!context) throw new Error("Canvas unavailable");
-      const size = Math.min(bitmap.width, bitmap.height);
-      context.drawImage(bitmap, (bitmap.width - size) / 2, (bitmap.height - size) / 2, size, size, 0, 0, 160, 160);
-      bitmap.close();
-      saveAvatar(canvas.toDataURL("image/jpeg", 0.8));
-    } catch {
-      showToast({ en: copy.en.photoError, id: copy.id.photoError }, "error");
-    }
+      let image: Blob | null;
+      try {
+        const canvas = document.createElement("canvas");
+        canvas.width = 256; canvas.height = 256;
+        const context = canvas.getContext("2d");
+        if (!context) throw new Error("Canvas unavailable");
+        const size = Math.min(bitmap.width, bitmap.height);
+        context.drawImage(bitmap, (bitmap.width - size) / 2, (bitmap.height - size) / 2, size, size, 0, 0, 256, 256);
+        image = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.85));
+      } finally { bitmap.close(); }
+      if (!image) throw new Error(text.photoError);
+      await saveAvatar(image);
+      showToast({ en: copy.en.photoSaved, id: copy.id.photoSaved }, "success");
+    } catch (error) { showToast({ en: errorText(error), id: errorText(error) }, "error"); }
+    finally { setPhotoBusy(false); }
   }
 
   if (editing) return <ProfileSetup profile={profile} weightKg={latest?.kg ?? null} onDone={() => setEditing(false)} onCancel={() => setEditing(false)} />;
@@ -73,7 +89,7 @@ export function ProfilePage() {
         </div>
         <div className="min-w-0 flex-1"><p className="text-sm font-bold text-[#dbf3ff]">{profile.name ? text.member : text.newMember}</p><h1 className="mt-1 break-words text-3xl font-extrabold tracking-[-.06em] sm:text-5xl">{profile.name || "Nourish"}</h1><p className="mt-2 text-sm text-[#dbf3ff]">{complete ? text.status : text.missing}</p></div>
       </div>
-      <div className="relative mt-6 flex flex-wrap gap-3"><button className="btn rounded-xl border-0 bg-brand-sun font-extrabold text-[#143345] hover:bg-brand-lemon" type="button" onClick={() => setEditing(true)}>{complete ? text.edit : text.start} ↗</button><button className="btn btn-outline rounded-xl border-white/60 text-white hover:bg-white/10" type="button" onClick={() => photoInput.current?.click()}>{text.photo}</button><input ref={photoInput} className="hidden" type="file" accept="image/jpeg,image/png,image/webp" onChange={choosePhoto} /></div>
+      <div className="relative mt-6 flex flex-wrap gap-3"><button className="btn rounded-xl border-0 bg-brand-sun font-extrabold text-[#143345] hover:bg-brand-lemon" type="button" onClick={() => setEditing(true)}>{complete ? text.edit : text.start} ↗</button><button className="btn btn-outline rounded-xl border-white/60 text-white hover:bg-white/10" type="button" disabled={photoBusy} onClick={() => photoInput.current?.click()}>{photoBusy ? "…" : text.photo}</button><input ref={photoInput} className="hidden" type="file" accept="image/jpeg,image/png,image/webp" onChange={choosePhoto} disabled={photoBusy} /></div>
     </section>
 
     <section className="grid gap-4 sm:grid-cols-2" aria-label={text.basics}>
@@ -81,9 +97,38 @@ export function ProfilePage() {
       <div className="rounded-[1.5rem] border border-line bg-surface p-6"><h2 className="text-xl font-extrabold">{text.direction}</h2><dl className="mt-5 grid grid-cols-2 gap-4 text-sm"><div><dt className="text-muted">{text.goal}</dt><dd className="mt-1 font-bold">{profile.goal ? text.goals[profile.goal] : text.noData}</dd></div><div><dt className="text-muted">{text.goalWeight}</dt><dd className="mt-1 font-bold">{profile.goalWeightKg !== null ? `${number.format(displayWeight(profile.goalWeightKg, profile.unitSystem))} ${weightUnit}` : text.noData}</dd></div><div><dt className="text-muted">{text.build}</dt><dd className="mt-1 font-bold">{profile.build ? text.builds[profile.build] : text.noData}</dd></div><div><dt className="text-muted">{text.activity}</dt><dd className="mt-1 font-bold">{profile.activityType ? `${text.activities[profile.activityType]} · ${profile.activityMinutes ?? 0} ${text.minutes}` : text.noData}</dd></div></dl></div>
     </section>
 
-    <section className="rounded-[1.5rem] border border-line bg-surface p-6 sm:p-8"><div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-xl font-extrabold">{text.targets}</h2><p className="mt-1 text-sm text-muted">{text.targetHint}</p></div><button className="btn btn-ghost btn-sm rounded-xl text-primary" type="button" onClick={() => setEditing(true)}>{text.edit}</button></div><div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">{NUTRIENTS.map((key) => <div key={key} className="rounded-xl bg-base-200 p-4"><p className="text-xs text-muted">{nutrientLabels[language][key]}</p><p className="mt-2 text-lg font-extrabold">{profile.targets ? number.format(profile.targets[key]) : "—"} <span className="text-xs font-normal text-muted">{profile.targets ? nutrientUnits[key] : ""}</span></p></div>)}</div></section>
+    <section className="rounded-[1.5rem] border border-line bg-surface p-6 sm:p-8"><div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-xl font-extrabold">{text.targets}</h2><p className="mt-1 text-sm text-muted">{text.targetHint}</p></div><button className="btn btn-ghost btn-sm rounded-xl text-primary" type="button" onClick={() => setEditing(true)}>{text.edit}</button></div><div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">{NUTRIENTS.map((key) => <div key={key} className={`rounded-xl border p-4 ${key === "sodium" ? "border-success/35 bg-[var(--tone-limit-bg)]" : MACRO_NUTRIENTS.includes(key) ? "border-primary/30 bg-[var(--tone-macro-bg)]" : "border-accent/40 bg-[var(--tone-micro-bg)]"}`}><p className="text-xs text-muted">{nutrientLabels[language][key]}</p><p className="mt-2 text-lg font-extrabold">{profile.targets ? number.format(profile.targets[key]) : "—"} <span className="text-xs font-normal text-muted">{profile.targets ? nutrientUnits[key] : ""}</span></p></div>)}</div></section>
 
-    <section className="grid gap-4 lg:grid-cols-[.8fr_1.2fr]"><div className="rounded-[1.5rem] bg-brand-lemon/45 p-6"><p className="text-xs font-extrabold tracking-[.14em]">{text.weight}</p><p className="mt-4 text-3xl font-extrabold">{latest ? `${number.format(displayWeight(latest.kg, profile.unitSystem))} ${weightUnit}` : "—"}</p><div className="mt-5"><WeightCheckIn /></div></div><div className="rounded-[1.5rem] border border-line bg-surface p-6"><h2 className="text-xl font-extrabold">{text.history}</h2><p className="mt-1 text-sm text-muted">{text.historyHint}</p>{weights.length ? <ol className="mt-4 divide-y divide-line">{[...weights].reverse().slice(0, 5).map((entry) => <li key={entry.date} className="flex justify-between py-3 text-sm"><span className="text-muted">{entry.date}</span><strong>{number.format(displayWeight(entry.kg, profile.unitSystem))} {weightUnit}</strong></li>)}</ol> : <p className="mt-5 text-sm text-muted">{text.emptyHistory}</p>}</div></section>
+    <section className="grid gap-4 lg:grid-cols-[.8fr_1.2fr]">
+      <div className="flex flex-col justify-between gap-6 rounded-[1.5rem] bg-brand-blue p-6 text-white">
+        <div>
+          <p className="text-xs font-extrabold tracking-[.14em] text-brand-lemon">{text.weight}</p>
+          <p className="mt-3 text-5xl font-extrabold leading-none">{latest ? <>{number.format(displayWeight(latest.kg, profile.unitSystem))} {weightUnit}</> : "—"}</p>
+          <p className="mt-3 text-sm font-bold text-[#dbf3ff]">{text.lastCheckIn}: {latest ? <time dateTime={latest.date}>{formatWeightDate(latest.date, language)}</time> : "—"}</p>
+          <div className="mt-5"><WeightCheckIn className="btn rounded-xl border-0 bg-brand-sun font-extrabold text-[#143345] hover:bg-brand-lemon" /></div>
+        </div>
+        {goalKg !== null && latest && <div className="rounded-xl border border-white/15 bg-white/10 p-4"><div className="flex items-center justify-between text-xs font-bold text-[#dbf3ff]"><span>{text.goalProgress}</span><span>{Math.round(progress ?? 0)}%</span></div><div className="mt-2 h-2 overflow-hidden rounded-full bg-white/20"><div className="h-full rounded-full bg-brand-sun" style={{ width: `${progress ?? 0}%` }} /></div><p className="mt-2 text-sm font-extrabold">{number.format(toGoal ?? 0)} {weightUnit} {text.toGoal}</p></div>}
+        <dl className="grid grid-cols-2 gap-3">
+          <div className="rounded-xl border border-white/15 bg-white/10 p-4"><dt className="text-xs font-bold text-[#dbf3ff]">{text.sinceLast}</dt><dd className="mt-1 text-base font-extrabold">{change !== null ? `${change > 0 ? "+" : change < 0 ? "−" : ""}${number.format(Math.abs(change))} ${weightUnit}` : latest ? text.firstCheckIn : "—"}</dd></div>
+          <div className="rounded-xl border border-white/15 bg-white/10 p-4"><dt className="text-xs font-bold text-[#dbf3ff]">{text.goalWeight}</dt><dd className="mt-1 text-base font-extrabold">{goalKg !== null ? `${number.format(displayWeight(goalKg, profile.unitSystem))} ${weightUnit}` : text.noData}</dd></div>
+        </dl>
+      </div>
+      <div className="min-w-0 rounded-[1.5rem] border border-line bg-surface p-6">
+        <h2 className="text-xl font-extrabold">{text.history}</h2>
+        <p className="mt-1 text-sm text-muted">{text.historyHint}</p>
+        {recentWeights.length ? <>
+          <div className="mt-5 rounded-2xl border border-line bg-base-200/50 p-4">
+            <div className="flex items-center justify-between gap-3 text-xs font-bold text-muted">
+              <span>{text.historyTrend}</span>
+              <span>{recentWeights.length} {text.checkIns}</span>
+            </div>
+            <WeightHistoryChart entries={recentWeights} language={language} unitSystem={profile.unitSystem} label={text.historyTrend} goalKg={goalKg} />
+            {goalKg !== null && <p className="mt-3 flex items-center gap-2 text-xs text-muted"><span className="h-0 w-6 border-t-2 border-dashed border-muted" />{text.goalLine}</p>}
+          </div>
+          <ol className="mt-4 divide-y divide-line">{[...recentWeights].reverse().map((entry) => <li key={entry.date} className="flex items-center justify-between gap-3 py-3 text-sm"><time dateTime={entry.date} className="text-muted">{formatWeightDate(entry.date, language)}</time><strong className="whitespace-nowrap">{number.format(displayWeight(entry.kg, profile.unitSystem))} {weightUnit}</strong></li>)}</ol>
+        </> : <p className="mt-5 text-sm text-muted">{text.emptyHistory}</p>}
+      </div>
+    </section>
     <p className="text-xs text-muted">{text.privacy}</p>
   </div>;
 }

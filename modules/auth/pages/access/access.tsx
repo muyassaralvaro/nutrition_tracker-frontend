@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type InputEvent, type SubmitEvent } from "react";
+import { useEffect, useState, type InputEvent, type SubmitEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion, useReducedMotion } from "motion/react";
@@ -10,6 +10,7 @@ import { ThemeToggle } from "@/shared/components/theme-toggle/ThemeToggle";
 import { useLanguage } from "@/shared/language";
 import { useToast } from "@/shared/components/toast/ToastProvider";
 import { highlightInvalid } from "@/shared/form-validation";
+import { api, API_ORIGIN, ApiError, errorText } from "@/shared/api-client";
 import { normalizeNationalPhone } from "./phone-number";
 import { styles } from "./access.styles";
 
@@ -43,9 +44,8 @@ const copy = {
     createAccount: "Create account", signIn: "Sign in", haveAccount: "Already have an account?", newHere: "New to Nourish?", createLink: "Create an account",
     formFooter: "A calmer way to care for yourself.",
     invalidCode: "Enter a country calling code with 1 to 3 digits.", invalidPhone: "Enter a valid phone number with 8 to 15 digits, including country code.",
-    passwordsMismatch: "Passwords do not match.", invalidFields: "Check the highlighted fields.", authPending: "Account access is coming next. Your details were not sent or saved.",
-    googlePending: "Google sign-in is coming next. No account was created.",
-    previewMode: "Opening preview. Sign-in is not connected; your credentials were not sent or saved.",
+    passwordsMismatch: "Passwords do not match.", invalidFields: "Check the highlighted fields.", authPending: "Phone registration is unavailable right now.",
+    googlePending: "Google sign-in is unavailable right now.", previewMode: "Could not sign in. Check your details and try again.", oauthFailed: "Google sign-in failed. Try again.",
   },
   id: {
     brandLabel: "Beranda Nourish", about: "Tentang Nourish", promoEyebrow: "CARA BARU UNTUK MERASA LEBIH BAIK",
@@ -59,13 +59,13 @@ const copy = {
     createAccount: "Buat akun", signIn: "Masuk", haveAccount: "Sudah punya akun?", newHere: "Baru di Nourish?", createLink: "Buat akun",
     formFooter: "Cara lebih tenang untuk merawat diri.",
     invalidCode: "Masukkan kode negara 1 hingga 3 digit.", invalidPhone: "Masukkan nomor telepon 8 hingga 15 digit, termasuk kode negara.",
-    passwordsMismatch: "Kata sandi tidak cocok.", invalidFields: "Periksa kolom yang ditandai.", authPending: "Akses akun belum tersedia. Data Anda tidak dikirim atau disimpan.",
-    googlePending: "Login Google belum tersedia. Akun belum dibuat.",
-    previewMode: "Membuka pratinjau. Login belum terhubung; data masuk Anda tidak dikirim atau disimpan.",
+    passwordsMismatch: "Kata sandi tidak cocok.", invalidFields: "Periksa kolom yang ditandai.", authPending: "Pendaftaran telepon belum tersedia saat ini.",
+    googlePending: "Login Google belum tersedia saat ini.", previewMode: "Gagal masuk. Periksa data dan coba lagi.", oauthFailed: "Login Google gagal. Coba lagi.",
   },
 } as const;
 
-type Notice = "invalidCode" | "invalidPhone" | "passwordsMismatch" | "invalidFields" | "authPending" | "googlePending" | "previewMode";
+type Notice = "invalidCode" | "invalidPhone" | "passwordsMismatch" | "invalidFields" | "authPending" | "googlePending" | "previewMode" | "oauthFailed";
+type AuthOptions = { phone_registration_enabled: boolean; google_enabled: boolean };
 
 function GoogleMark() {
   return (
@@ -86,8 +86,16 @@ export function AccessPage({ mode }: { mode: AccessMode }) {
   const text = copy[language];
   const [countryCode, setCountryCode] = useState("+62");
   const [customCode, setCustomCode] = useState("");
+  const [options, setOptions] = useState<AuthOptions | null>(null);
+  const [busy, setBusy] = useState(false);
   const isRegister = mode === "register";
   const activeCode = countryCode === "other" ? customCode : countryCode;
+
+  useEffect(() => {
+    api<{ data: AuthOptions }>("/api/v1/auth/options").then(({ data }) => setOptions(data)).catch(() => setOptions({ phone_registration_enabled: false, google_enabled: false }));
+    const oauth = new URLSearchParams(window.location.search).get("oauth");
+    if (oauth) showToast({ en: copy.en.oauthFailed, id: copy.id.oauthFailed }, "error");
+  }, [showToast]);
 
   function notify(key: Notice, kind: "info" | "error" = "info") {
     showToast({ en: copy.en[key], id: copy.id[key] }, kind);
@@ -102,7 +110,7 @@ export function AccessPage({ mode }: { mode: AccessMode }) {
     input.setSelectionRange(beforeCursor.length, beforeCursor.length);
   }
 
-  function handleSubmit(event: SubmitEvent<HTMLFormElement>) {
+  async function handleSubmit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = event.currentTarget;
     const values = new FormData(form);
@@ -133,12 +141,24 @@ export function AccessPage({ mode }: { mode: AccessMode }) {
       return;
     }
 
-    // ponytail: Laravel auth is pending; sign-in opens a local preview without sending credentials.
-    if (isRegister) notify("authPending");
-    else {
-      notify("previewMode");
-      router.push("/home");
-    }
+    if (isRegister && !options?.phone_registration_enabled) { notify("authPending", "error"); return; }
+    setBusy(true);
+    try {
+      await api(`/api/v1/auth/${isRegister ? "register" : "login"}`, { method: "POST", body: JSON.stringify({
+        ...(isRegister ? { name: String(values.get("name") ?? "").trim(), password_confirmation: String(values.get("confirmPassword") ?? "") } : {}),
+        phone_e164: `${code}${national}`, password: String(values.get("password") ?? ""),
+      }) });
+      router.replace("/home");
+    } catch (error) {
+      if (error instanceof ApiError) {
+        for (const [key, fieldName] of [["phone_e164", "phone"], ["name", "name"], ["password", "password"], ["password_confirmation", "confirmPassword"]]) {
+          const field = form.elements.namedItem(fieldName) as HTMLInputElement | null;
+          if (field && error.errors[key]?.length) field.setCustomValidity(error.errors[key][0]);
+        }
+        highlightInvalid(form, () => {});
+      }
+      showToast({ en: errorText(error), id: error instanceof ApiError && error.status === 422 ? copy.id.previewMode : errorText(error) }, "error");
+    } finally { setBusy(false); }
   }
 
   return (
@@ -174,9 +194,10 @@ export function AccessPage({ mode }: { mode: AccessMode }) {
           <h1 className={`${styles.title} ${isRegister ? "" : styles.loginTitle}`} id="access-title">{isRegister ? <>{text.registerTitle}<br /><span className="text-primary">{text.registerAccent}</span></> : <>{text.loginTitle} <span className="text-primary">{text.loginAccent}</span></>}</h1>
           <p className={`${styles.description} ${isRegister ? "" : styles.loginDescription}`}>{isRegister ? text.registerDescription : text.loginDescription}</p>
 
-          <button className={`${styles.googleButton} ${isRegister ? "" : styles.loginGoogle}`} type="button" onClick={() => notify("googlePending")}>
+          <a className={`${styles.googleButton} ${isRegister ? "" : styles.loginGoogle} ${!options?.google_enabled || busy ? "pointer-events-none opacity-50" : ""}`} href={`${API_ORIGIN}/api/v1/auth/google/redirect`} aria-disabled={!options?.google_enabled || busy} tabIndex={options?.google_enabled && !busy ? 0 : -1} title={options && !options.google_enabled ? text.googlePending : undefined}>
             <span className="mr-2 size-5"><GoogleMark /></span> {text.google}
-          </button>
+          </a>
+          {options && !options.google_enabled && <p className="mt-2 text-center text-xs text-muted">{text.googlePending}</p>}
 
           <div className={`${styles.divider} ${isRegister ? "" : styles.loginDivider}`}><span className="h-px flex-1 bg-line" /><span>{text.phoneDivider}</span><span className="h-px flex-1 bg-line" /></div>
 
@@ -184,7 +205,7 @@ export function AccessPage({ mode }: { mode: AccessMode }) {
             {isRegister && (
               <div className={styles.field}>
                 <label className={styles.fieldLabel} htmlFor="full-name">{text.fullName}</label>
-                <input className={styles.input} id="full-name" name="name" type="text" autoComplete="name" placeholder={text.namePlaceholder} required />
+                <input className={styles.input} id="full-name" name="name" type="text" autoComplete="name" placeholder={text.namePlaceholder} onInput={(event) => event.currentTarget.setCustomValidity("")} required />
               </div>
             )}
             <div className={`${styles.field} ${isRegister ? "" : styles.loginField}`}>
@@ -202,7 +223,7 @@ export function AccessPage({ mode }: { mode: AccessMode }) {
             </div>
             <div className={`${styles.field} ${isRegister ? "" : styles.loginField}`}>
               <label className={styles.fieldLabel} htmlFor="password">{text.password}</label>
-              <input className={`${styles.input} ${isRegister ? "" : styles.loginControl}`} id="password" name="password" type="password" autoComplete={isRegister ? "new-password" : "current-password"} placeholder={text.passwordPlaceholder} minLength={8} onInput={(event) => { const confirm = event.currentTarget.form?.elements.namedItem("confirmPassword") as HTMLInputElement | null; confirm?.setCustomValidity(""); }} required />
+              <input className={`${styles.input} ${isRegister ? "" : styles.loginControl}`} id="password" name="password" type="password" autoComplete={isRegister ? "new-password" : "current-password"} placeholder={text.passwordPlaceholder} minLength={8} onInput={(event) => { event.currentTarget.setCustomValidity(""); const confirm = event.currentTarget.form?.elements.namedItem("confirmPassword") as HTMLInputElement | null; confirm?.setCustomValidity(""); }} required />
             </div>
             {isRegister && (
               <div className={styles.field}>
@@ -210,8 +231,9 @@ export function AccessPage({ mode }: { mode: AccessMode }) {
                 <input className={styles.input} id="confirm-password" name="confirmPassword" type="password" autoComplete="new-password" placeholder={text.confirmPlaceholder} minLength={8} onInput={(event) => event.currentTarget.setCustomValidity("")} required />
               </div>
             )}
-            <button className={`${styles.submit} ${isRegister ? "" : styles.loginControl}`} type="submit">{isRegister ? text.createAccount : text.signIn}<span className="ml-auto text-[1.35rem] leading-none font-normal" aria-hidden="true">→</span></button>
+            <button className={`${styles.submit} ${isRegister ? "" : styles.loginControl}`} type="submit" disabled={busy || isRegister && !options?.phone_registration_enabled}>{busy ? "…" : isRegister ? text.createAccount : text.signIn}<span className="ml-auto text-[1.35rem] leading-none font-normal" aria-hidden="true">→</span></button>
           </form>
+          {isRegister && options && !options.phone_registration_enabled && <p className="mt-3 text-center text-xs text-muted">{text.authPending}</p>}
 
           <p className={`${styles.switch} ${isRegister ? "" : styles.loginSwitch}`}>{isRegister ? text.haveAccount : text.newHere} <Link className={styles.switchLink} href={isRegister ? "/login" : "/register"}>{isRegister ? text.signIn : text.createLink}</Link></p>
         </motion.section>
