@@ -36,7 +36,6 @@ export const styles = {
   phoneNumber: "h-[52px] min-w-0 flex-1 border-0 bg-transparent px-3 text-[.85rem] text-ink outline-none placeholder:text-muted/75",
   fieldHint: "text-[.72rem] text-muted",
   submit: "btn btn-primary mt-1 min-h-[54px] w-full rounded-[.9rem] text-[.94rem] font-extrabold",
-  notice: "mt-4 rounded-[.8rem] border border-brand-sun/60 bg-brand-lemon/25 px-4 py-3 text-[.8rem] leading-normal text-ink",
   switch: "mt-6 text-center text-[.85rem] text-muted",
   switchLink: "font-extrabold text-primary underline underline-offset-[3px]",
   formFooter: "px-8 pt-4 pb-7 text-center text-[.72rem] text-muted max-[959px]:pb-5",

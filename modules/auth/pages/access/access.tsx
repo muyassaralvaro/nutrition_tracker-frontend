@@ -1,12 +1,15 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useState, type InputEvent, type SubmitEvent } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { motion, useReducedMotion } from "motion/react";
 import { Brand } from "@/shared/components/brand/Brand";
 import { LanguageToggle } from "@/shared/components/language-toggle/LanguageToggle";
 import { ThemeToggle } from "@/shared/components/theme-toggle/ThemeToggle";
 import { useLanguage } from "@/shared/language";
+import { useToast } from "@/shared/components/toast/ToastProvider";
+import { highlightInvalid } from "@/shared/form-validation";
 import { normalizeNationalPhone } from "./phone-number";
 import { styles } from "./access.styles";
 
@@ -40,8 +43,9 @@ const copy = {
     createAccount: "Create account", signIn: "Sign in", haveAccount: "Already have an account?", newHere: "New to Nourish?", createLink: "Create an account",
     formFooter: "A calmer way to care for yourself.",
     invalidCode: "Enter a country calling code with 1 to 3 digits.", invalidPhone: "Enter a valid phone number with 8 to 15 digits, including country code.",
-    passwordsMismatch: "Passwords do not match.", authPending: "Account access is coming next. Your details were not sent or saved.",
+    passwordsMismatch: "Passwords do not match.", invalidFields: "Check the highlighted fields.", authPending: "Account access is coming next. Your details were not sent or saved.",
     googlePending: "Google sign-in is coming next. No account was created.",
+    previewMode: "Opening preview. Sign-in is not connected; your credentials were not sent or saved.",
   },
   id: {
     brandLabel: "Beranda Nourish", about: "Tentang Nourish", promoEyebrow: "CARA BARU UNTUK MERASA LEBIH BAIK",
@@ -55,12 +59,13 @@ const copy = {
     createAccount: "Buat akun", signIn: "Masuk", haveAccount: "Sudah punya akun?", newHere: "Baru di Nourish?", createLink: "Buat akun",
     formFooter: "Cara lebih tenang untuk merawat diri.",
     invalidCode: "Masukkan kode negara 1 hingga 3 digit.", invalidPhone: "Masukkan nomor telepon 8 hingga 15 digit, termasuk kode negara.",
-    passwordsMismatch: "Kata sandi tidak cocok.", authPending: "Akses akun belum tersedia. Data Anda tidak dikirim atau disimpan.",
+    passwordsMismatch: "Kata sandi tidak cocok.", invalidFields: "Periksa kolom yang ditandai.", authPending: "Akses akun belum tersedia. Data Anda tidak dikirim atau disimpan.",
     googlePending: "Login Google belum tersedia. Akun belum dibuat.",
+    previewMode: "Membuka pratinjau. Login belum terhubung; data masuk Anda tidak dikirim atau disimpan.",
   },
 } as const;
 
-type Notice = "invalidCode" | "invalidPhone" | "passwordsMismatch" | "authPending" | "googlePending";
+type Notice = "invalidCode" | "invalidPhone" | "passwordsMismatch" | "invalidFields" | "authPending" | "googlePending" | "previewMode";
 
 function GoogleMark() {
   return (
@@ -74,47 +79,66 @@ function GoogleMark() {
 }
 
 export function AccessPage({ mode }: { mode: AccessMode }) {
+  const router = useRouter();
+  const showToast = useToast();
   const language = useLanguage();
   const reducedMotion = useReducedMotion();
   const text = copy[language];
-  const [notice, setNotice] = useState<Notice | null>(null);
   const [countryCode, setCountryCode] = useState("+62");
   const [customCode, setCustomCode] = useState("");
   const isRegister = mode === "register";
   const activeCode = countryCode === "other" ? customCode : countryCode;
 
-  function handlePhoneInput(event: FormEvent<HTMLInputElement>) {
+  function notify(key: Notice, kind: "info" | "error" = "info") {
+    showToast({ en: copy.en[key], id: copy.id[key] }, kind);
+  }
+
+  function handlePhoneInput(event: InputEvent<HTMLInputElement>) {
     const input = event.currentTarget;
+    input.setCustomValidity("");
     const cursor = input.selectionStart ?? input.value.length;
     const beforeCursor = normalizeNationalPhone(input.value.slice(0, cursor), activeCode);
     input.value = normalizeNationalPhone(input.value, activeCode);
     input.setSelectionRange(beforeCursor.length, beforeCursor.length);
-    setNotice(null);
   }
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  function handleSubmit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
-    const values = new FormData(event.currentTarget);
+    const form = event.currentTarget;
+    const values = new FormData(form);
     const choice = String(values.get("callingCode") ?? "");
     const code = choice === "other" ? String(values.get("customCode") ?? "") : choice;
     const national = normalizeNationalPhone(String(values.get("phone") ?? ""), code);
     const digits = `${code.replace(/\D/g, "")}${national}`;
 
     if (!/^\+[1-9]\d{0,2}$/.test(code)) {
-      setNotice("invalidCode");
+      const field = form.elements.namedItem("customCode") as HTMLInputElement | null;
+      field?.setCustomValidity(text.invalidCode);
+      highlightInvalid(form, () => notify("invalidCode", "error"));
+      field?.focus();
       return;
     }
     if (digits.length < 8 || digits.length > 15) {
-      setNotice("invalidPhone");
+      const field = form.elements.namedItem("phone") as HTMLInputElement;
+      field.setCustomValidity(text.invalidPhone);
+      highlightInvalid(form, () => notify("invalidPhone", "error"));
+      field.focus();
       return;
     }
     if (isRegister && values.get("password") !== values.get("confirmPassword")) {
-      setNotice("passwordsMismatch");
+      const field = form.elements.namedItem("confirmPassword") as HTMLInputElement;
+      field.setCustomValidity(text.passwordsMismatch);
+      highlightInvalid(form, () => notify("passwordsMismatch", "error"));
+      field.focus();
       return;
     }
 
-    // ponytail: This phase builds auth screens only; connect Laravel auth before accepting credentials.
-    setNotice("authPending");
+    // ponytail: Laravel auth is pending; sign-in opens a local preview without sending credentials.
+    if (isRegister) notify("authPending");
+    else {
+      notify("previewMode");
+      router.push("/home");
+    }
   }
 
   return (
@@ -150,13 +174,13 @@ export function AccessPage({ mode }: { mode: AccessMode }) {
           <h1 className={`${styles.title} ${isRegister ? "" : styles.loginTitle}`} id="access-title">{isRegister ? <>{text.registerTitle}<br /><span className="text-primary">{text.registerAccent}</span></> : <>{text.loginTitle} <span className="text-primary">{text.loginAccent}</span></>}</h1>
           <p className={`${styles.description} ${isRegister ? "" : styles.loginDescription}`}>{isRegister ? text.registerDescription : text.loginDescription}</p>
 
-          <button className={`${styles.googleButton} ${isRegister ? "" : styles.loginGoogle}`} type="button" onClick={() => setNotice("googlePending")}>
+          <button className={`${styles.googleButton} ${isRegister ? "" : styles.loginGoogle}`} type="button" onClick={() => notify("googlePending")}>
             <span className="mr-2 size-5"><GoogleMark /></span> {text.google}
           </button>
 
           <div className={`${styles.divider} ${isRegister ? "" : styles.loginDivider}`}><span className="h-px flex-1 bg-line" /><span>{text.phoneDivider}</span><span className="h-px flex-1 bg-line" /></div>
 
-          <form className={`${styles.form} ${isRegister ? "" : styles.loginForm}`} onSubmit={handleSubmit}>
+          <form className={`${styles.form} ${isRegister ? "" : styles.loginForm}`} onSubmit={handleSubmit} onInvalid={(event) => highlightInvalid(event.currentTarget, () => notify("invalidFields", "error"))}>
             {isRegister && (
               <div className={styles.field}>
                 <label className={styles.fieldLabel} htmlFor="full-name">{text.fullName}</label>
@@ -166,11 +190,11 @@ export function AccessPage({ mode }: { mode: AccessMode }) {
             <div className={`${styles.field} ${isRegister ? "" : styles.loginField}`}>
               <label className={styles.fieldLabel} htmlFor="phone">{text.phone}</label>
               <div className={`${styles.phoneControl} ${isRegister ? "" : styles.loginControl}`}>
-                <select className={`${styles.countrySelect} ${isRegister ? "" : styles.loginControlInner}`} name="callingCode" aria-label={text.callingCode} autoComplete="tel-country-code" value={countryCode} onChange={(event) => { setCountryCode(event.target.value); setNotice(null); }}>
+                <select className={`${styles.countrySelect} ${isRegister ? "" : styles.loginControlInner}`} name="callingCode" aria-label={text.callingCode} autoComplete="tel-country-code" value={countryCode} onChange={(event) => setCountryCode(event.target.value)}>
                   {COUNTRY_CODES.map(({ name, nameId, label, code }) => <option className="bg-surface text-ink" key={code} value={code} aria-label={`${language === "id" ? nameId : name} ${code}`}>{label}</option>)}
                   <option className="bg-surface text-ink" value="other">{text.other}</option>
                 </select>
-                {countryCode === "other" && <input className={`${styles.customCode} ${isRegister ? "" : styles.loginControlInner}`} name="customCode" type="tel" inputMode="tel" aria-label={text.customCode} placeholder="+49" value={customCode} onChange={(event) => { const digits = event.target.value.replace(/\D/g, "").slice(0, 3); setCustomCode(digits ? `+${digits}` : ""); }} required />}
+                {countryCode === "other" && <input className={`${styles.customCode} ${isRegister ? "" : styles.loginControlInner}`} name="customCode" type="tel" inputMode="tel" aria-label={text.customCode} placeholder="+49" value={customCode} onChange={(event) => { event.target.setCustomValidity(""); const digits = event.target.value.replace(/\D/g, "").slice(0, 3); setCustomCode(digits ? `+${digits}` : ""); }} required />}
                 <span className={styles.phoneDivider} aria-hidden="true" />
                 <input className={`${styles.phoneNumber} ${isRegister ? "" : styles.loginControlInner}`} id="phone" name="phone" type="tel" inputMode="tel" autoComplete="tel-national" placeholder="812 3456 7890" aria-describedby="phone-hint" onInput={handlePhoneInput} required />
               </div>
@@ -178,18 +202,17 @@ export function AccessPage({ mode }: { mode: AccessMode }) {
             </div>
             <div className={`${styles.field} ${isRegister ? "" : styles.loginField}`}>
               <label className={styles.fieldLabel} htmlFor="password">{text.password}</label>
-              <input className={`${styles.input} ${isRegister ? "" : styles.loginControl}`} id="password" name="password" type="password" autoComplete={isRegister ? "new-password" : "current-password"} placeholder={text.passwordPlaceholder} minLength={8} required />
+              <input className={`${styles.input} ${isRegister ? "" : styles.loginControl}`} id="password" name="password" type="password" autoComplete={isRegister ? "new-password" : "current-password"} placeholder={text.passwordPlaceholder} minLength={8} onInput={(event) => { const confirm = event.currentTarget.form?.elements.namedItem("confirmPassword") as HTMLInputElement | null; confirm?.setCustomValidity(""); }} required />
             </div>
             {isRegister && (
               <div className={styles.field}>
                 <label className={styles.fieldLabel} htmlFor="confirm-password">{text.confirmPassword}</label>
-                <input className={styles.input} id="confirm-password" name="confirmPassword" type="password" autoComplete="new-password" placeholder={text.confirmPlaceholder} minLength={8} required />
+                <input className={styles.input} id="confirm-password" name="confirmPassword" type="password" autoComplete="new-password" placeholder={text.confirmPlaceholder} minLength={8} onInput={(event) => event.currentTarget.setCustomValidity("")} required />
               </div>
             )}
             <button className={`${styles.submit} ${isRegister ? "" : styles.loginControl}`} type="submit">{isRegister ? text.createAccount : text.signIn}<span className="ml-auto text-[1.35rem] leading-none font-normal" aria-hidden="true">→</span></button>
           </form>
 
-          {notice && <p className={styles.notice} role="status">{text[notice]}</p>}
           <p className={`${styles.switch} ${isRegister ? "" : styles.loginSwitch}`}>{isRegister ? text.haveAccount : text.newHere} <Link className={styles.switchLink} href={isRegister ? "/login" : "/register"}>{isRegister ? text.signIn : text.createLink}</Link></p>
         </motion.section>
         {isRegister && <p className={styles.formFooter}>{text.formFooter}</p>}

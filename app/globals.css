@@ -116,3 +116,18 @@ body {
   outline: 3px solid var(--color-primary);
   outline-offset: 3px;
 }
+
+@layer components {
+  form[data-attempted] :is(input, select, textarea):invalid,
+  [aria-invalid="true"],
+  [data-invalid="true"] {
+    border-color: var(--color-error) !important;
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-error) 28%, transparent) !important;
+  }
+
+  form[data-attempted] div:has(> input[name="phone"]:invalid),
+  form[data-attempted] div:has(> input[name="customCode"]:invalid) {
+    outline: 2px solid var(--color-error);
+    outline-offset: 2px;
+  }
+}
