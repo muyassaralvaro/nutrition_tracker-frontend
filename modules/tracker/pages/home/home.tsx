@@ -3,70 +3,105 @@
 import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { animate, motion, useMotionValue, useMotionValueEvent, useReducedMotion } from "motion/react";
+import { AnimatePresence, animate, motion, useMotionValue, useMotionValueEvent, useReducedMotion } from "motion/react";
 import { useLanguage } from "@/shared/language";
 import { useToast } from "@/shared/components/toast/ToastProvider";
 import { API_ORIGIN, errorText } from "@/shared/api-client";
 import { WeightCheckIn } from "../../components/WeightCheckIn";
-import { displayWeight, MACRO_NUTRIENTS, NUTRIENTS, type Nutrient } from "../../nutrition";
+import { displayWeight, GOAL_LOWER_RATIO, GOAL_UPPER_RATIO, isCalorieWarning, MACRO_NUTRIENTS, NUTRIENTS, type Nutrient } from "../../nutrition";
 import { nutrientLabels, nutrientUnits } from "../../nutrition-ui";
 import { isProfileComplete, removeMeal, useTodayKey, useTrackerData, type MealEntry } from "../../tracker-data";
 import { formatWeightDate } from "../profile/weight-history";
 
 const copy = {
   en: {
-    eyebrow: "TODAY AT A GLANCE", hello: (name: string) => `Hi, ${name}.`, helloNew: "Start your day well.", intro: "Your food, movement, and weight in one calmer view.",
+    eyebrow: "TODAY AT A GLANCE", hello: (name: string) => `Hi, ${name}.`, helloNew: "Start your day well.", intro: "Your food, nutritions, and goal in one calmer view.",
     setup: "Build your nutrition plan", setupBody: "Add your measurements and activity to get editable calorie, macro, and mineral targets.", setupAction: "Set up profile",
-    energy: "Energy", protein: "Protein", consumed: "eaten", goal: "goal", noGoal: "Set a daily target", nutrition: "Daily nutrition", nutritionHint: "Values come from meals you logged, not a photo estimate.", left: "left", over: "over", limitLeft: "below limit", unknown: "Some meal values unknown", noTarget: "Add profile target", sodiumLimit: "upper limit",
+    energy: "Energy", protein: "Protein", consumed: "eaten", goal: "goal", noGoal: "Set a daily target", nutrition: "Daily nutrition", nutritionHint: "Values come from meals you logged, not a photo estimate.", left: "below goal range", belowMinimum: "below minimum", over: "above goal range", aboveLimit: "above upper limit", inRange: "Within goal range", calorieWarning: "Calories above target, within range", minimumMet: "Minimum met", limitLeft: "Within upper limit", unknown: "Some meal values unknown", noTarget: "Add profile target", sodiumLimit: "upper limit", goalRange: "goal range", circleRange: "target zone", minimum: "minimum",
     todayMeals: "Today's meals", noMeals: "No meals logged today.", addMeal: "Add a meal", scan: "Open camera", editMeal: "Edit", remove: "Remove meal", removeConfirm: "Remove this meal from today's log?", cancel: "Cancel", removed: "Meal removed.", details: "Meal details", nutritionShort: "Nutrition Facts", itemsLabel: "Items", notRecorded: "Not recorded", close: "Close",
     weight: "Weight check-in", current: "Latest weight", noWeight: "No weight yet", checkInDate: "Last check-in", goalWeight: "Goal weight", notSet: "Not set", foodLog: "FOOD LOG", mealHint: "Photograph a dish for a nutrition estimate, or enter it yourself.", manualMeal: "Enter manually", kg: "kg", kcal: "kcal",
-    statusTitle: "Today's goal", status: { empty: "No meals yet", noTarget: "Set targets first", partial: "More values needed", progress: "In progress", complete: "All goals met" },
-    completionHint: "Complete means all nine logged nutrients meet their target; sodium stays below its limit.", mealTypes: { breakfast: "Breakfast", lunch: "Lunch", dinner: "Dinner", snack: "Snack" },
+    statusTitle: "Today's goal", status: { empty: "No meals yet", noTarget: "Set targets first", partial: "More values needed", progress: "Goal not met yet", complete: "All goals met", over: "Over-ate today" },
+    goalInfo: "How goals are counted", completionHint: "Calories and macros count within 90–105% of target. Calories above 100% show a warning; fiber and minerals need at least 90%, and sodium stays below its limit.", mealTypes: { breakfast: "Breakfast", lunch: "Lunch", dinner: "Dinner", snack: "Snack" },
   },
   id: {
-    eyebrow: "RINGKASAN HARI INI", hello: (name: string) => `Halo, ${name}.`, helloNew: "Mulai harimu dengan baik.", intro: "Makanan, aktivitas, dan berat badan dalam satu tampilan.",
+    eyebrow: "RINGKASAN HARI INI", hello: (name: string) => `Halo, ${name}.`, helloNew: "Mulai harimu dengan baik.", intro: "Mulai mencatat nutrisi dan gizi harian mu.",
     setup: "Buat rencana gizimu", setupBody: "Isi ukuran tubuh dan aktivitas untuk mendapat target kalori, makro, dan mineral yang bisa diubah.", setupAction: "Isi profil",
-    energy: "Energi", protein: "Protein", consumed: "dikonsumsi", goal: "target", noGoal: "Tentukan target harian", nutrition: "Gizi harian", nutritionHint: "Nilai berasal dari makanan yang kamu catat, bukan perkiraan foto.", left: "tersisa", over: "melewati", limitLeft: "di bawah batas", unknown: "Sebagian nilai makanan belum diketahui", noTarget: "Isi target di profil", sodiumLimit: "batas atas",
+    energy: "Energi", protein: "Protein", consumed: "dikonsumsi", goal: "target", noGoal: "Tentukan target harian", nutrition: "Gizi harian", nutritionHint: "Nilai berasal dari makanan yang kamu catat, bukan perkiraan foto.", left: "di bawah rentang target", belowMinimum: "di bawah minimum", over: "di atas rentang target", aboveLimit: "melewati batas atas", inRange: "Dalam rentang target", calorieWarning: "Kalori di atas target, masih dalam rentang", minimumMet: "Batas minimum tercapai", limitLeft: "Dalam batas atas", unknown: "Sebagian nilai makanan belum diketahui", noTarget: "Isi target di profil", sodiumLimit: "batas atas", goalRange: "rentang target", circleRange: "zona target", minimum: "minimum",
     todayMeals: "Makanan hari ini", noMeals: "Belum ada makanan tercatat hari ini.", addMeal: "Tambah makanan", scan: "Buka kamera", editMeal: "Ubah", remove: "Hapus makanan", removeConfirm: "Hapus makanan ini dari catatan hari ini?", cancel: "Batal", removed: "Makanan dihapus.", details: "Detail makanan", nutritionShort: "Informasi Nilai Gizi", itemsLabel: "Rincian", notRecorded: "Belum dicatat", close: "Tutup",
-    weight: "Catatan berat", current: "Berat terakhir", noWeight: "Belum ada berat", checkInDate: "Terakhir dicatat", goalWeight: "Berat tujuan", notSet: "Belum diatur", foodLog: "CATATAN MAKANAN", mealHint: "Foto hidangan untuk perkiraan gizi, atau isi sendiri.", manualMeal: "Isi manual", kg: "kg", kcal: "kkal",
-    statusTitle: "Target hari ini", status: { empty: "Belum ada makanan", noTarget: "Isi target dahulu", partial: "Data belum lengkap", progress: "Sedang berjalan", complete: "Semua target tercapai" },
-    completionHint: "Selesai berarti sembilan nutrisi tercatat dan mencapai target; natrium tetap di bawah batas.", mealTypes: { breakfast: "Sarapan", lunch: "Makan siang", dinner: "Makan malam", snack: "Camilan" },
+    weight: "Catatan berat", current: "Berat terakhir", noWeight: "Belum ada berat", checkInDate: "Terakhir dicatat", goalWeight: "Berat tujuan", notSet: "Belum diatur", foodLog: "CATATAN MAKANAN", mealHint: "Foto makanan-mu untuk analisis gizi, atau isi manual.", manualMeal: "Isi manual", kg: "kg", kcal: "kkal",
+    statusTitle: "Target hari ini", status: { empty: "Belum ada makanan", noTarget: "Isi target dahulu", partial: "Data belum lengkap", progress: "Target belum tercapai", complete: "Semua target tercapai", over: "Makan berlebih hari ini" },
+    goalInfo: "Cara menghitung target", completionHint: "Target harian tercapai jika kalori, protein, karbohidrat, dan lemak masing-masing mencapai 90–105% dari targetnya. Serat dan mineral harus mencapai minimal 90% dari target, sedangkan natrium tidak boleh melewati batas. Kalori di atas 100% hingga 105% tetap memenuhi target, tetapi ditandai dengan peringatan.", mealTypes: { breakfast: "Sarapan", lunch: "Makan siang", dinner: "Makan malam", snack: "Camilan" },
   },
 } as const;
 
-function ProgressRing({ calories, calorieGoal, protein, proteinGoal, language }: { calories: number; calorieGoal: number | null; protein: number; proteinGoal: number | null; language: "en" | "id" }) {
+type HomeStatus = keyof typeof copy.en.status;
+
+function ProgressRing({ calories, calorieGoal, caloriesKnown, calorieWarning, protein, proteinGoal, proteinKnown, status, day, userId, language }: { calories: number; calorieGoal: number | null; caloriesKnown: boolean; calorieWarning: boolean; protein: number; proteinGoal: number | null; proteinKnown: boolean; status: HomeStatus; day: string; userId: number | null; language: "en" | "id" }) {
+  const text = copy[language];
   const reducedMotion = useReducedMotion();
   const animatedCalories = useMotionValue(0);
   const [shownCalories, setShownCalories] = useState(0);
+  const [celebrationId, setCelebrationId] = useState<string | null>(null);
   useMotionValueEvent(animatedCalories, "change", (value) => setShownCalories(Math.round(value)));
   useEffect(() => {
     if (reducedMotion) { animatedCalories.set(calories); return; }
     const controls = animate(animatedCalories, calories, { duration: 1, ease: "easeOut" });
     return () => controls.stop();
   }, [animatedCalories, calories, reducedMotion]);
+  const completionId = userId === null ? "" : `${userId}:${day}`;
+  useEffect(() => {
+    if (!day || userId === null || status !== "complete" || reducedMotion) return;
+    const start = window.setTimeout(() => {
+      try {
+        // ponytail: Celebration is once per account per browser; store it server-side if cross-device deduplication matters.
+        const key = `nourish:goal-celebrated:${userId}`;
+        if (window.localStorage.getItem(key) === day) return;
+        window.localStorage.setItem(key, day);
+      } catch { return; }
+      setCelebrationId(completionId);
+    }, 700);
+    const finish = window.setTimeout(() => setCelebrationId(null), 2600);
+    return () => { window.clearTimeout(start); window.clearTimeout(finish); setCelebrationId(null); };
+  }, [day, userId, status, reducedMotion, completionId]);
   const outer = 2 * Math.PI * 92;
   const inner = 2 * Math.PI * 72;
-  const calorieProgress = calorieGoal ? Math.min(1, calories / calorieGoal) : 0;
-  const proteinProgress = proteinGoal ? Math.min(1, protein / proteinGoal) : 0;
+  const calorieProgress = calorieGoal && caloriesKnown ? Math.min(1, calories / calorieGoal) : 0;
+  const proteinProgress = proteinGoal && proteinKnown ? Math.min(1, protein / proteinGoal) : 0;
   const number = new Intl.NumberFormat(language === "id" ? "id-ID" : "en-US", { maximumFractionDigits: 0 });
-  return <div className="relative mx-auto size-[260px] sm:size-[300px]" role="img" aria-label={`${number.format(calories)} ${language === "id" ? "dari" : "of"} ${calorieGoal ? number.format(calorieGoal) : "—"} kcal`}>
+  const range = calorieGoal ? `${number.format(calorieGoal * GOAL_LOWER_RATIO)}–${number.format(calorieGoal)} ${text.kcal}` : text.noGoal;
+  const calorieStroke = calorieGoal && caloriesKnown && calories > calorieGoal * GOAL_UPPER_RATIO ? "var(--color-error)" : calorieWarning ? "var(--color-warning)" : calorieGoal && caloriesKnown && calories >= calorieGoal * GOAL_LOWER_RATIO ? "var(--color-success)" : "var(--brand-sky)";
+  const proteinStroke = proteinGoal && proteinKnown && protein > proteinGoal * GOAL_UPPER_RATIO ? "var(--color-error)" : proteinGoal && proteinKnown && protein >= proteinGoal * GOAL_LOWER_RATIO ? "var(--color-success)" : "var(--brand-sun)";
+  const showCheck = celebrationId === completionId && !reducedMotion && status === "complete";
+  return <div className="relative mx-auto size-[260px] sm:size-[300px] lg:size-[400px] xl:size-[440px]" role="img" aria-label={`${caloriesKnown ? number.format(calories) + " kcal" : text.unknown}; ${range}; ${text.status[status]}${calorieWarning ? `; ${text.calorieWarning}` : ""}`}>
     <svg className="size-full -rotate-90" viewBox="0 0 240 240" fill="none" aria-hidden="true">
       <circle cx="120" cy="120" r="92" stroke="var(--line)" strokeWidth="13" />
       <circle cx="120" cy="120" r="72" stroke="var(--line)" strokeWidth="11" />
-      <motion.circle cx="120" cy="120" r="92" stroke="var(--brand-sky)" strokeWidth="13" strokeLinecap="round" initial={reducedMotion ? false : { strokeDasharray: `0 ${outer}` }} animate={{ strokeDasharray: `${outer * calorieProgress} ${outer}` }} transition={{ duration: reducedMotion ? 0 : 1, ease: "easeOut" }} />
-      <motion.circle cx="120" cy="120" r="72" stroke="var(--brand-sun)" strokeWidth="11" strokeLinecap="round" initial={reducedMotion ? false : { strokeDasharray: `0 ${inner}` }} animate={{ strokeDasharray: `${inner * proteinProgress} ${inner}` }} transition={{ duration: reducedMotion ? 0 : 1, ease: "easeOut" }} />
+      <motion.circle cx="120" cy="120" r="92" stroke={calorieStroke} strokeWidth="13" strokeLinecap={calorieProgress ? "round" : "butt"} initial={reducedMotion ? false : { strokeDasharray: `0 ${outer}` }} animate={{ strokeDasharray: `${outer * calorieProgress} ${outer}` }} transition={{ duration: reducedMotion ? 0 : 1, ease: "easeOut" }} />
+      <motion.circle cx="120" cy="120" r="72" stroke={proteinStroke} strokeWidth="11" strokeLinecap={proteinProgress ? "round" : "butt"} initial={reducedMotion ? false : { strokeDasharray: `0 ${inner}` }} animate={{ strokeDasharray: `${inner * proteinProgress} ${inner}` }} transition={{ duration: reducedMotion ? 0 : 1, ease: "easeOut" }} />
     </svg>
-    <div className="absolute inset-0 flex flex-col items-center justify-center text-center"><span className="text-xs font-extrabold tracking-[.14em] text-muted">{language === "id" ? "KALORI" : "CALORIES"}</span><strong className="mt-2 text-4xl font-extrabold tracking-[-.08em] text-ink sm:text-5xl">{number.format(reducedMotion ? calories : shownCalories)}</strong><span className="text-sm text-muted">/ {calorieGoal ? number.format(calorieGoal) : "—"} kcal</span></div>
+    <div className="absolute inset-0 grid place-items-center text-center"><AnimatePresence mode="wait" initial={false}>{showCheck ? <motion.div key="check" className="flex flex-col items-center text-success" initial={{ opacity: 0, scale: 0.7 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.8 }} transition={{ duration: 0.25 }}><svg className="size-20 lg:size-24" viewBox="0 0 48 48" fill="none" aria-hidden="true"><motion.path d="M9 25l10 10L39 13" stroke="currentColor" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round" initial={{ pathLength: 0 }} animate={{ pathLength: 1 }} transition={{ duration: 0.55, ease: "easeOut" }} /></svg><strong className="mt-1 text-sm font-extrabold">{text.status.complete}</strong></motion.div> : <motion.div key="amount" className="flex flex-col items-center" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} transition={{ duration: 0.2 }}><span className="text-xs font-extrabold tracking-[.14em] text-muted lg:text-sm">{language === "id" ? "KALORI" : "CALORIES"}</span><strong className="mt-2 text-4xl font-extrabold tracking-[-.08em] text-ink sm:text-5xl lg:text-6xl">{caloriesKnown ? number.format(reducedMotion ? calories : shownCalories) : "—"}</strong><span className="mt-1 text-xs text-muted lg:text-sm">{range}</span><span className={`mt-1 max-w-36 text-[.65rem] font-bold leading-3 lg:max-w-48 lg:text-xs ${calorieWarning ? "rounded-full bg-brand-sun/25 px-2 py-1 text-ink" : "text-muted"}`}>{calorieWarning ? text.calorieWarning : text.circleRange}</span></motion.div>}</AnimatePresence></div>
   </div>;
 }
 
-function NutrientCard({ name, amount, target, known, unit, isLimit, tone, language }: { name: string; amount: number; target: number | null; known: boolean; unit: string; isLimit: boolean; tone: "macro" | "micro"; language: "en" | "id" }) {
+function NutrientCard({ name, amount, target, known, warning, unit, isLimit, tone, language }: { name: string; amount: number; target: number | null; known: boolean; warning: boolean; unit: string; isLimit: boolean; tone: "macro" | "micro"; language: "en" | "id" }) {
   const text = copy[language];
   const number = new Intl.NumberFormat(language === "id" ? "id-ID" : "en-US", { maximumFractionDigits: 1 });
-  const progress = target && known ? Math.min(100, amount / target * 100) : 0;
-  const difference = target && known ? Math.max(0, Math.round(Math.abs(target - amount) * 10) / 10) : null;
-  const over = Boolean(isLimit && target && amount > target);
-  return <div className={`rounded-2xl border p-4 sm:p-5 ${isLimit ? (over ? "border-error/35 bg-[var(--tone-over-bg)]" : "border-success/35 bg-[var(--tone-limit-bg)]") : tone === "macro" ? "border-primary/30 bg-[var(--tone-macro-bg)]" : "border-accent/40 bg-[var(--tone-micro-bg)]"}`}><div className="flex items-center justify-between gap-2"><h3 className="text-sm font-extrabold">{name}</h3><span className={`rounded-full px-2.5 py-1 text-[.65rem] font-extrabold ${isLimit ? (over ? "bg-error/15 text-error" : "bg-success/15 text-success") : tone === "macro" ? "bg-primary/15 text-primary" : "bg-accent/20 text-ink"}`}>{isLimit ? text.sodiumLimit : unit}</span></div><p className="mt-3 text-2xl font-extrabold">{known ? number.format(amount) : "—"} <span className="text-xs font-medium text-muted">/ {target ? number.format(target) : "—"} {unit}</span></p><progress className={`progress mt-4 h-2 w-full ${isLimit ? (over ? "progress-error" : "progress-success") : tone === "macro" ? "progress-primary" : "progress-accent"}`} value={progress} max="100" /><p className="mt-2 text-xs text-muted">{!known ? text.unknown : !target ? text.noTarget : `${number.format(difference ?? 0)} ${unit} ${amount > target ? text.over : isLimit ? text.limitLeft : text.left}`}</p></div>;
+  const lower = (target ?? 0) * GOAL_LOWER_RATIO;
+  const upper = target === null || isLimit || tone === "micro" ? null : target * GOAL_UPPER_RATIO;
+  const over = known && target !== null && (isLimit ? amount > target : upper !== null && amount > upper);
+  const met = known && target !== null && (isLimit ? amount <= target : amount >= lower && (upper === null || amount <= upper));
+  const difference = target === null || !known || met ? null : over ? amount - (isLimit ? target : upper ?? target) : lower - amount;
+  const progress = target && known ? Math.min(100, amount / (isLimit ? target : lower) * 100) : 0;
+  const range = target === null ? "—" : isLimit ? `≤ ${number.format(target)} ${unit}` : upper !== null ? `${number.format(lower)}–${number.format(upper)} ${unit}` : `≥ ${number.format(lower)} ${unit}`;
+  const status = !known ? text.unknown : target === null ? text.noTarget : warning ? text.calorieWarning : met ? (isLimit ? text.limitLeft : upper === null ? text.minimumMet : text.inRange) : `${number.format(Math.max(0, difference ?? 0))} ${unit} ${over ? isLimit ? text.aboveLimit : text.over : upper === null ? text.belowMinimum : text.left}`;
+  const toneClass = over ? "border-error/35 bg-[var(--tone-over-bg)]" : warning ? "border-warning/40 bg-warning/10" : isLimit ? "border-success/35 bg-[var(--tone-limit-bg)]" : tone === "macro" ? "border-primary/30 bg-[var(--tone-macro-bg)]" : "border-accent/40 bg-[var(--tone-micro-bg)]";
+  return <div className={`rounded-2xl border p-4 shadow-[0_10px_28px_rgba(20,51,69,.12)] sm:p-5 ${toneClass}`}>
+    <div className="flex items-center justify-between gap-2"><h3 className="text-sm font-extrabold">{name}</h3><span className={`rounded-full px-2.5 py-1 text-[.65rem] font-extrabold ${over ? "bg-error/15 text-error" : warning ? "bg-brand-sun/30 text-ink" : met ? "bg-success/15 text-success" : tone === "macro" ? "bg-primary/15 text-primary" : "bg-accent/20 text-ink"}`}>{isLimit ? text.sodiumLimit : unit}</span></div>
+    <p className="mt-3 text-2xl font-extrabold">{known ? number.format(amount) : "—"} <span className="text-xs font-medium text-muted">{unit}</span></p>
+    <p className="mt-1 text-xs text-muted">{isLimit ? text.sodiumLimit : upper === null ? text.minimum : text.goalRange}: {range}</p>
+    <progress className={`progress mt-4 h-2 w-full ${over ? "progress-error" : warning ? "progress-warning" : met ? "progress-success" : tone === "macro" ? "progress-primary" : "progress-accent"}`} value={progress} max="100" />
+    <p className={`mt-2 text-xs font-bold ${over ? "text-error" : warning ? "text-ink" : met ? "text-success" : "text-muted"}`}>{status}</p>
+  </div>;
 }
 
 export function HomePage() {
@@ -82,6 +117,7 @@ export function HomePage() {
   const known = day?.nutrition.known;
   const targets = day?.target ?? null;
   const status = day?.nutrition.status === "no_target" ? "noTarget" : day?.nutrition.status ?? "empty";
+  const calorieWarning = Boolean(known?.calories && isCalorieWarning(totals?.calories, targets?.calories));
   const latest = weights.at(-1);
   const number = new Intl.NumberFormat(language === "id" ? "id-ID" : "en-US", { maximumFractionDigits: 1 });
   const weightUnit = profile.unitSystem === "imperial" ? "lb" : "kg";
@@ -113,9 +149,9 @@ export function HomePage() {
     <header className="flex flex-wrap items-end justify-between gap-4"><div><p className="text-[.68rem] font-extrabold tracking-[.18em] text-primary">{text.eyebrow} {dayLabel && `· ${dayLabel}`}</p><h1 className="mt-3 text-[clamp(2.4rem,7vw,4.3rem)] leading-tight font-extrabold tracking-[-.07em]">{profile.name ? text.hello(profile.name) : text.helloNew}</h1><p className="mt-2 text-sm text-muted sm:text-base">{text.intro}</p></div><WeightCheckIn /></header>
     {!isProfileComplete(data) && <section className="rounded-[1.5rem] border border-brand-sun/30 bg-brand-lemon/15 p-6 sm:p-8"><h2 className="text-xl font-extrabold">{text.setup}</h2><p className="mt-2 max-w-2xl text-sm leading-6 text-muted">{text.setupBody}</p><Link href="/profile" className="btn btn-primary mt-5 rounded-xl font-extrabold">{text.setupAction} ↗</Link></section>}
 
-    <section className="grid gap-4 lg:grid-cols-[1.15fr_.85fr]" aria-labelledby="today-goal"><div className="rounded-[1.8rem] border border-line bg-surface p-5 text-center sm:p-8"><h2 id="today-goal" className="text-left text-xl font-extrabold">{text.statusTitle}</h2><ProgressRing calories={totals?.calories ?? 0} calorieGoal={targets?.calories ?? null} protein={totals?.protein ?? 0} proteinGoal={targets?.protein ?? null} language={language} /><div className="mx-auto flex max-w-sm justify-center gap-5 text-xs font-bold"><span className="flex items-center gap-2"><i className="size-2.5 rounded-full bg-brand-sky" />{text.energy}</span><span className="flex items-center gap-2"><i className="size-2.5 rounded-full bg-brand-sun" />{text.protein}</span></div><p className="mt-5 inline-flex rounded-full bg-primary/10 px-4 py-2 text-sm font-extrabold text-primary">{text.status[status]}</p><p className="mx-auto mt-3 max-w-sm text-xs leading-5 text-muted">{text.completionHint}</p></div>
-      <div className="grid content-start gap-4">
-        <div className="rounded-[1.6rem] bg-brand-blue p-6 text-white sm:p-8">
+    <section className="grid gap-4 lg:grid-cols-[1.15fr_.85fr]" aria-labelledby="today-goal"><div className="rounded-[1.8rem] border border-line bg-surface p-5 shadow-[0_10px_28px_rgba(20,51,69,.12)] text-center sm:p-8"><div className="flex items-start justify-between gap-3"><h2 id="today-goal" className="text-left text-xl font-extrabold">{text.statusTitle}</h2><details className="group relative z-20"><summary className="grid size-9 cursor-pointer list-none place-items-center rounded-full border border-line bg-base-200 text-primary transition-colors hover:bg-brand-sky/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary [&::-webkit-details-marker]:hidden" aria-label={text.goalInfo} title={text.goalInfo}><span aria-hidden="true" className="text-lg font-extrabold">i</span></summary><p className="absolute right-0 top-11 w-[min(18rem,calc(100vw-4rem))] rounded-2xl border border-line bg-surface p-4 text-left text-sm leading-6 text-ink shadow-xl">{text.completionHint}</p></details></div><ProgressRing calories={totals?.calories ?? 0} calorieGoal={targets?.calories ?? null} caloriesKnown={known?.calories ?? true} calorieWarning={calorieWarning} protein={totals?.protein ?? 0} proteinGoal={targets?.protein ?? null} proteinKnown={known?.protein ?? true} status={status} day={today} userId={data.user?.id ?? null} language={language} /><div className="mx-auto flex max-w-sm justify-center gap-5 text-xs font-bold"><span className="flex items-center gap-2"><i className="size-2.5 rounded-full bg-brand-sky" />{text.energy}</span><span className="flex items-center gap-2"><i className="size-2.5 rounded-full bg-brand-sun" />{text.protein}</span></div><p className={`mt-5 inline-flex rounded-full px-4 py-2 text-sm font-extrabold ${status === "over" ? "bg-error/15 text-error" : calorieWarning && status === "complete" ? "bg-brand-sun/30 text-ink" : status === "complete" ? "bg-success/15 text-success" : "bg-primary/10 text-primary"}`}>{text.status[status]}{status === "complete" && calorieWarning ? ` · ${text.calorieWarning}` : ""}</p></div>
+      <div className="grid gap-4 lg:grid-rows-[1fr_auto]">
+        <div className="rounded-[1.6rem] bg-brand-blue p-6 shadow-[0_10px_28px_rgba(20,51,69,.12)] text-white sm:p-8 lg:flex lg:flex-col">
           <p className="text-xs font-extrabold tracking-[.14em] text-brand-lemon">{text.weight}</p>
           <p className="mt-4 text-sm text-[#dbf3ff]">{text.current}</p>
           <p className="mt-2 text-3xl font-extrabold">{latest ? `${number.format(displayWeight(latest.kg, profile.unitSystem))} ${weightUnit}` : text.noWeight}</p>
@@ -123,9 +159,9 @@ export function HomePage() {
             <div><dt className="text-[#dbf3ff]">{text.checkInDate}</dt><dd className="mt-1 font-extrabold">{checkInDate}</dd></div>
             <div><dt className="text-[#dbf3ff]">{text.goalWeight}</dt><dd className="mt-1 font-extrabold">{profile.goalWeightKg !== null ? `${number.format(displayWeight(profile.goalWeightKg, profile.unitSystem))} ${weightUnit}` : text.notSet}</dd></div>
           </dl>
-          <div className="mt-5"><WeightCheckIn className="btn rounded-xl border-0 bg-brand-sun font-extrabold text-[#143345] hover:bg-brand-lemon" /></div>
+          <div className="mt-5 lg:mt-auto lg:pt-5"><WeightCheckIn className="btn rounded-xl border-0 bg-brand-sun font-extrabold text-[#143345] hover:bg-brand-lemon" /></div>
         </div>
-        <div className="rounded-[1.6rem] border border-line bg-surface p-6 sm:p-8">
+        <div className="rounded-[1.6rem] border border-line bg-surface p-6 shadow-[0_10px_28px_rgba(20,51,69,.12)] sm:p-8">
           <div className="flex items-center justify-between gap-3"><div><p className="text-xs font-extrabold tracking-[.14em] text-primary">{text.foodLog}</p><h3 className="mt-2 text-xl font-extrabold">{text.addMeal}</h3></div><span className="grid size-11 shrink-0 place-items-center rounded-full bg-brand-lemon text-2xl text-brand-blue" aria-hidden="true">＋</span></div>
           <p className="mt-3 text-sm leading-6 text-muted">{text.mealHint}</p>
           <div className="mt-5 flex flex-wrap gap-2"><Link href="/camera" className="btn btn-primary rounded-xl font-extrabold">{text.scan}</Link><Link href="/camera#manual-meal" className="btn btn-outline rounded-xl border-line font-extrabold text-primary">{text.manualMeal}</Link></div>
@@ -133,9 +169,9 @@ export function HomePage() {
       </div>
     </section>
 
-    <section aria-labelledby="daily-nutrition"><div className="mb-4"><h2 id="daily-nutrition" className="text-2xl font-extrabold tracking-[-.05em]">{text.nutrition}</h2><p className="mt-1 text-sm text-muted">{text.nutritionHint}</p></div><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{NUTRIENTS.map((key: Nutrient) => <NutrientCard key={key} name={nutrientLabels[language][key]} amount={totals?.[key] ?? 0} target={targets?.[key] ?? null} known={known?.[key] ?? true} unit={nutrientUnits[key]} isLimit={key === "sodium"} tone={MACRO_NUTRIENTS.includes(key) ? "macro" : "micro"} language={language} />)}</div></section>
+    <section aria-labelledby="daily-nutrition"><div className="mb-4"><h2 id="daily-nutrition" className="text-2xl font-extrabold tracking-[-.05em]">{text.nutrition}</h2><p className="mt-1 text-sm text-muted">{text.nutritionHint}</p></div><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{NUTRIENTS.map((key: Nutrient) => <NutrientCard key={key} name={nutrientLabels[language][key]} amount={totals?.[key] ?? 0} target={targets?.[key] ?? null} known={known?.[key] ?? true} warning={key === "calories" && calorieWarning} unit={nutrientUnits[key]} isLimit={key === "sodium"} tone={MACRO_NUTRIENTS.includes(key) ? "macro" : "micro"} language={language} />)}</div></section>
 
-    <section className="rounded-[1.7rem] border border-line bg-surface p-5 sm:p-8" aria-labelledby="today-meals">
+    <section className="rounded-[1.7rem] border border-line bg-surface p-5 shadow-[0_10px_28px_rgba(20,51,69,.12)] sm:p-8" aria-labelledby="today-meals">
       <div className="flex flex-wrap items-center justify-between gap-3"><h2 id="today-meals" className="text-2xl font-extrabold tracking-[-.05em]">{text.todayMeals}</h2><Link className="btn btn-outline btn-sm rounded-xl border-line text-primary" href="/camera#manual-meal">{text.addMeal}</Link></div>
       {todayMeals.length ? <ol className="mt-5 divide-y divide-line">{[...todayMeals].reverse().map((meal) => <li key={meal.id} className="flex flex-wrap items-center gap-2 py-4">
         <button className="flex min-w-0 flex-1 items-center gap-3 rounded-xl text-left transition-colors duration-150 hover:bg-base-200/60 focus-visible:outline-2" type="button" onClick={() => openDetails(meal)} aria-label={`${meal.name} — ${text.details}`}>

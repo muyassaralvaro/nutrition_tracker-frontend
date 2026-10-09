@@ -3,27 +3,26 @@
 import { useEffect, useRef } from "react";
 import { Chart, CategoryScale, LinearScale, LineController, LineElement, PointElement, Filler, Tooltip } from "chart.js";
 import { displayWeight, type UnitSystem } from "../../nutrition";
-import type { WeightEntry } from "../../tracker-data";
-import { formatWeightDate } from "./weight-history";
+import { formatWeightDate, type WeightDay } from "./weight-history";
 
 Chart.register(CategoryScale, LinearScale, LineController, LineElement, PointElement, Filler, Tooltip);
 
-export function WeightHistoryChart({ entries, language, unitSystem, label, goalKg }: { entries: readonly WeightEntry[]; language: "en" | "id"; unitSystem: UnitSystem; label: string; goalKg?: number | null }) {
+export function WeightHistoryChart({ series, language, unitSystem, label, carriedLabel, goalKg }: { series: readonly WeightDay[]; language: "en" | "id"; unitSystem: UnitSystem; label: string; carriedLabel: string; goalKg?: number | null }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas || !entries.length) return;
+    if (!canvas || !series.some((day) => day.kg !== null)) return;
     const chartCanvas = canvas;
 
     const unit = unitSystem === "imperial" ? "lb" : "kg";
     const number = new Intl.NumberFormat(language === "id" ? "id-ID" : "en-US", { maximumFractionDigits: 1 });
-    const values = entries.map((entry) => displayWeight(entry.kg, unitSystem));
+    const values = series.flatMap((day) => day.kg === null ? [] : [displayWeight(day.kg, unitSystem)]);
     const goal = goalKg === null || goalKg === undefined ? null : displayWeight(goalKg, unitSystem);
     const lowest = goal === null ? Math.min(...values) : Math.min(...values, goal);
     const highest = goal === null ? Math.max(...values) : Math.max(...values, goal);
     const padding = Math.max((highest - lowest) * 0.25, unitSystem === "imperial" ? 4 : 2);
-    let chart: Chart<"line", number[], string> | null = null;
+    let chart: Chart<"line", (number | null)[], string> | null = null;
 
     function renderChart() {
       const style = getComputedStyle(document.documentElement);
@@ -35,10 +34,10 @@ export function WeightHistoryChart({ entries, language, unitSystem, label, goalK
       chart = new Chart(chartCanvas, {
         type: "line",
         data: {
-          labels: entries.map((entry) => formatWeightDate(entry.date, language)),
+          labels: series.map((day) => formatWeightDate(day.date, language).slice(0, 6)),
           datasets: [
-            { data: values, borderColor: primary, backgroundColor: `${primary}24`, fill: "start", borderWidth: 3, tension: 0.25, pointRadius: entries.length === 1 ? 6 : 4, pointHoverRadius: 8, pointHitRadius: 20, pointBackgroundColor: primary, pointBorderColor: surface, pointBorderWidth: 2 },
-            ...(goal === null ? [] : [{ data: entries.map(() => goal), borderColor: muted, borderDash: [6, 4], borderWidth: 2, pointRadius: 0, pointHitRadius: 0, fill: false }]),
+            { data: series.map((day) => day.kg === null ? null : displayWeight(day.kg, unitSystem)), borderColor: primary, backgroundColor: `${primary}24`, fill: "start", borderWidth: 3, tension: 0, pointRadius: (context) => series.length === 1 || series[context.dataIndex]?.recorded ? 4 : 0, pointHoverRadius: 7, pointHitRadius: 16, pointBackgroundColor: primary, pointBorderColor: surface, pointBorderWidth: 2 },
+            ...(goal === null ? [] : [{ data: series.map(() => goal), borderColor: muted, borderDash: [6, 4], borderWidth: 2, pointRadius: 0, pointHitRadius: 0, fill: false }]),
           ],
         },
         options: {
@@ -46,9 +45,9 @@ export function WeightHistoryChart({ entries, language, unitSystem, label, goalK
           maintainAspectRatio: false,
           animation: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? false : { duration: 400 },
           interaction: { mode: "index", intersect: false },
-          plugins: { legend: { display: false }, tooltip: { displayColors: false, filter: (item) => item.datasetIndex === 0, callbacks: { label: (item) => `${label}: ${item.parsed.y === null ? "—" : number.format(item.parsed.y)} ${unit}` } } },
+          plugins: { legend: { display: false }, tooltip: { displayColors: false, filter: (item) => item.datasetIndex === 0, callbacks: { title: (items) => items[0] ? formatWeightDate(series[items[0].dataIndex].date, language) : "", label: (item) => `${series[item.dataIndex].recorded ? label : carriedLabel}: ${item.parsed.y === null ? "—" : number.format(item.parsed.y)} ${unit}` } } },
           scales: {
-            x: { grid: { display: false }, border: { display: false }, ticks: { color: muted, maxTicksLimit: 3, maxRotation: 0 } },
+            x: { grid: { display: false }, border: { display: false }, ticks: { color: muted, maxTicksLimit: 5, maxRotation: 0 } },
             y: { suggestedMin: Math.max(0, lowest - padding), suggestedMax: highest + padding, border: { display: false }, grid: { color: line }, ticks: { color: muted, maxTicksLimit: 6, callback: (value) => `${number.format(Number(value))} ${unit}` } },
           },
         },
@@ -60,7 +59,7 @@ export function WeightHistoryChart({ entries, language, unitSystem, label, goalK
     window.addEventListener("nourish-theme-change", renderChart);
     media.addEventListener("change", renderChart);
     return () => { window.removeEventListener("nourish-theme-change", renderChart); media.removeEventListener("change", renderChart); chart?.destroy(); };
-  }, [entries, language, unitSystem, label, goalKg]);
+  }, [series, language, unitSystem, label, carriedLabel, goalKg]);
 
-  return <div className="relative mt-3 h-56 w-full sm:h-64"><canvas ref={canvasRef} role="img" aria-label={label} /></div>;
+  return <div className="relative mt-3 min-h-56 w-full flex-1 lg:min-h-0"><canvas ref={canvasRef} role="img" aria-label={label} /></div>;
 }
