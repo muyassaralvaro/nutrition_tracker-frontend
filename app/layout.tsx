@@ -3,8 +3,10 @@ import { ToastProvider } from "@/shared/components/toast/ToastProvider";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Nourish — nutrition, your way",
-  description: "A calmer way to track meals, movement, and progress.",
+  metadataBase: new URL("https://nourish.my.id"),
+  applicationName: "Nourish",
+  title: "Nourish | Meal Photo Nutrition Tracker",
+  description: "Track meals from photos, review nutrition estimates, set daily targets, and follow your weight progress with Nourish.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

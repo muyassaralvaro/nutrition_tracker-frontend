@@ -11,12 +11,15 @@ const returning = await fetch(origin, {
 assert.equal(returning.status, 307, "Returning visit should redirect");
 assert.equal(new URL(returning.headers.get("location"), origin).pathname, "/login");
 
-for (const path of ["/login", "/register"]) {
-  const response = await fetch(new URL(path, origin));
-  assert.equal(response.status, 200);
-  const html = await response.text();
-  assert.match(html, /Phone number/);
-  assert.match(html, /Continue with Google/);
-}
+const login = await fetch(new URL("/login", origin));
+assert.equal(login.status, 200);
+const html = await login.text();
+assert.match(html, /Continue with Google/);
+assert.match(html, /Terms of Service/);
+assert.doesNotMatch(html, /Phone number/);
+
+const register = await fetch(new URL("/register", origin), { redirect: "manual" });
+assert.equal(register.status, 307);
+assert.equal(new URL(register.headers.get("location"), origin).pathname, "/login");
 
 console.log("Intro redirect and auth routes passed");

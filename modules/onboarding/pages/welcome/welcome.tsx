@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { Brand } from "@/shared/components/brand/Brand";
@@ -14,27 +15,27 @@ const copy = {
     slides: [
       { label: "A clearer way to eat", title: "Make meals", accent: "make sense.", description: "Snap your plate, check the details, and keep a picture of what fuels your day." },
       { label: "Made for your goals", title: "Find your", accent: "own balance.", description: "Your weight, activity, and goals shape a daily target you can always adjust." },
-      { label: "Progress at your pace", title: "See the", accent: "whole story.", description: "Meals, movement, and weight trends come together, one good day at a time." },
+      { label: "Progress at your pace", title: "See the", accent: "whole story.", description: "Meals, nutrition goals, and weight trends come together, one day at a time." },
     ],
-    mealSnap: "MEAL SNAP", lunch: "Lunch plate", mealCaption: "Looks good, feels good", foodsFound: "3 foods found",
+    mealSnap: "MEAL SNAP", lunch: "Lunch plate", mealCaption: "Looks good, feels good", foodsFound: "1 dish estimate",
     dailyGoal: "YOUR DAILY GOAL", kcalTarget: "kcal target", startingPoint: "A starting point made for you", carbs: "Carbs",
     week: "YOUR WEEK", smallSteps: "Small steps add up.", daysLogged: "4 of 5 days logged", rhythm: "Your rhythm", weekDays: ["M", "T", "W", "T", "F", "S", "S"],
     notes: ["A moment to nourish", "Made around you", "Keep your momentum"],
     skip: "Skip intro", back: "Back", continue: "Continue", getStarted: "Get started", opening: "Getting your space ready…",
-    slidesLabel: "Introduction slides", slideLabel: (index: number) => `Go to slide ${index + 1}`, brandLabel: "Nourish home",
+    slidesLabel: "Introduction slides", slideLabel: (index: number) => `Go to slide ${index + 1}`, brandLabel: "Nourish home", terms: "Terms of Service", privacy: "Privacy Policy",
   },
   id: {
     slides: [
       { label: "Kenali makananmu", title: "Pahami", accent: "makananmu.", description: "Foto hidanganmu, lihat rincian gizi, dan kenali asupan harianmu." },
       { label: "Sesuai tujuanmu", title: "Target", accent: "untukmu.", description: "Berat badan, aktivitas, dan tujuanmu membentuk target harian yang bisa kamu ubah." },
-      { label: "Maju dengan ritmemu", title: "Lihat", accent: "kemajuanmu.", description: "Catatan makan, olahraga, dan berat badan menunjukkan kemajuanmu dari waktu ke waktu." },
+      { label: "Maju dengan ritmemu", title: "Lihat", accent: "kemajuanmu.", description: "Catatan makan, target gizi, dan berat badan menunjukkan kemajuanmu dari waktu ke waktu." },
     ],
-    mealSnap: "FOTO MAKANAN", lunch: "Makan siang", mealCaption: "Enak dan seimbang", foodsFound: "3 makanan",
+    mealSnap: "FOTO MAKANAN", lunch: "Makan siang", mealCaption: "Enak dan seimbang", foodsFound: "Perkiraan 1 hidangan",
     dailyGoal: "TARGET HARIAN", kcalTarget: "target kkal", startingPoint: "Awal yang sesuai untukmu", carbs: "Karbo",
     week: "PEKAN INI", smallSteps: "Langkah kecil berarti.", daysLogged: "Tercatat 4 dari 5 hari", rhythm: "Ritmemu", weekDays: ["S", "S", "R", "K", "J", "S", "M"],
     notes: ["Nikmati hari ini", "Sesuai tujuanmu", "Terus melangkah"],
     skip: "Lewati", back: "Kembali", continue: "Lanjut", getStarted: "Mulai", opening: "Menyiapkan ruangmu…",
-    slidesLabel: "Slide pengenalan", slideLabel: (index: number) => `Buka slide ${index + 1}`, brandLabel: "Beranda Nourish",
+    slidesLabel: "Slide pengenalan", slideLabel: (index: number) => `Buka slide ${index + 1}`, brandLabel: "Beranda Nourish", terms: "Syarat Layanan", privacy: "Kebijakan Privasi",
   },
 } as const;
 
@@ -171,6 +172,7 @@ export function WelcomePage() {
               {current > 0 && <button className={styles.plainButton} type="button" onClick={() => setCurrent(current - 1)}>{text.back}</button>}
               <button className={styles.next} type="button" onClick={next} disabled={opening}>{current === text.slides.length - 1 ? text.getStarted : text.continue}<span className="ml-4 text-[1.4rem] leading-none font-normal" aria-hidden="true">→</span></button>
             </div>
+            <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs font-bold text-muted"><Link className="underline underline-offset-4" href="/terms">{text.terms}</Link><Link className="underline underline-offset-4" href="/privacy">{text.privacy}</Link></div>
           </div>
         </div>
       </div>

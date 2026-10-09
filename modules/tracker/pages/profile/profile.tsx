@@ -2,13 +2,14 @@
 
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import { useLanguage } from "@/shared/language";
 import { useToast } from "@/shared/components/toast/ToastProvider";
 import { errorText } from "@/shared/api-client";
 import { WeightCheckIn } from "../../components/WeightCheckIn";
 import { displayHeight, displayWeight, feetAndInches, GOAL_LOWER_RATIO, GOAL_UPPER_RATIO, MACRO_NUTRIENTS, NUTRIENTS } from "../../nutrition";
 import { nutrientLabels, nutrientUnits } from "../../nutrition-ui";
-import { isProfileComplete, loadWeightMonth, saveAvatar, useTodayKey, useTrackerData, type WeightEntry } from "../../tracker-data";
+import { analysisResetCountdown, isProfileComplete, loadAnalysisQuota, loadWeightMonth, saveAvatar, useTodayKey, useTrackerData, type AnalysisQuota, type WeightEntry } from "../../tracker-data";
 import { ProfileSetup } from "./ProfileSetup";
 import { WeightHistoryChart } from "./WeightHistoryChart";
 import { formatWeightDate, shiftWeightMonth, weightMonthSeries } from "./weight-history";
@@ -19,12 +20,14 @@ const copy = {
     basics: "Your details", age: "Age", height: "Height", weight: "Current weight", bodyFat: "Body fat", noData: "Not set", years: "years", cm: "cm", kg: "kg",
     direction: "Your direction", goal: "Goal", goalWeight: "Goal weight", build: "Body shape", activity: "Daily activity", minutes: "min/day", goals: { lose: "Lose weight", maintain: "Maintain weight", gain: "Gain weight" }, builds: { lean: "Lean", soft: "Lean, softer middle", stocky: "Broad build", muscular: "Muscular" }, activities: { daily: "Everyday movement", cardio: "Cardio", strength: "Strength", mixed: "Mixed" },
     targets: "Your daily targets", targetHint: "Editable values. Calories and macros count within 90–105%; fiber and minerals need at least 90%. Sodium is an upper limit.", targetRange: "Goal range", targetMinimum: "Minimum", targetLimit: "Upper limit", history: "Weight history", historyHint: "Daily view by month", historyTrend: "Daily weight", firstCheckIn: "First check-in", lastCheckIn: "Last check-in", sinceLast: "Since last check-in", checkIns: "check-ins", emptyHistory: "No weight recorded by this month.", goalProgress: "Goal progress", toGoal: "to goal", goalLine: "Goal weight", previousMonth: "Previous month", nextMonth: "Next month", carriedWeight: "Last recorded weight", carryHint: "Days without a check-in use your last recorded weight.", loadingHistory: "Loading weight history…", historyError: "Could not load weight history.", retryHistory: "Try again", privacy: "Profile, weight, and photo are saved to your account. Your photo stays private and can be changed here.",
+    analysisAllowance: "AI analysis allowance", analysesLeft: "new meal analyses remaining", unlimited: "Unlimited", unlimitedAnalyses: "AI meal analyses available", unlimitedRegen: "No per-meal regeneration limit for this account.", regenAllowance: "Each meal can be regenerated twice.", analyzeMeal: "Analyze a meal",
   },
   id: {
     eyebrow: "PROFILMU", member: "Ruang Nourish milikmu", newMember: "Ruangmu dimulai di sini", status: "Rencana pribadi", missing: "Lengkapi profil untuk melihat rencana", start: "Buat rencana", edit: "Ubah rencana", photo: "Ganti foto profil", photoError: "Pilih foto JPG, PNG, atau WebP di bawah 3 MB.", photoSaved: "Foto profil tersimpan.",
     basics: "Data dirimu", age: "Usia", height: "Tinggi", weight: "Berat saat ini", bodyFat: "Lemak tubuh", noData: "Belum diisi", years: "tahun", cm: "cm", kg: "kg",
     direction: "Arah tujuan", goal: "Tujuan", goalWeight: "Berat tujuan", build: "Bentuk tubuh", activity: "Aktivitas harian", minutes: "menit/hari", goals: { lose: "Turunkan berat", maintain: "Jaga berat", gain: "Tambah berat" }, builds: { lean: "Ramping", soft: "Ramping, perut lebih lembut", stocky: "Badan lebar", muscular: "Berotot" }, activities: { daily: "Gerak sehari-hari", cardio: "Kardio", strength: "Latihan beban", mixed: "Campuran" },
     targets: "Target harianmu", targetHint: "Angka bisa diubah. Kalori dan makro tercapai pada 90–105%; serat dan mineral minimal 90%. Natrium adalah batas atas.", targetRange: "Rentang target", targetMinimum: "Minimum", targetLimit: "Batas atas", history: "Riwayat berat", historyHint: "Tampilan harian per bulan", historyTrend: "Berat harian", firstCheckIn: "Catatan pertama", lastCheckIn: "Terakhir dicatat", sinceLast: "Sejak catatan lalu", checkIns: "catatan", emptyHistory: "Belum ada berat tercatat hingga bulan ini.", goalProgress: "Progres target", toGoal: "menuju target", goalLine: "Berat tujuan", previousMonth: "Bulan sebelumnya", nextMonth: "Bulan berikutnya", carriedWeight: "Berat terakhir tercatat", carryHint: "Hari tanpa catatan memakai berat terakhir yang tercatat.", loadingHistory: "Memuat riwayat berat…", historyError: "Riwayat berat gagal dimuat.", retryHistory: "Coba lagi", privacy: "Profil, berat, dan foto tersimpan di akunmu. Foto tetap privat dan bisa diganti di sini.",
+    analysisAllowance: "Jatah analisis AI", analysesLeft: "analisis makanan baru tersisa", unlimited: "Tanpa batas", unlimitedAnalyses: "analisis makanan AI tersedia", unlimitedRegen: "Akun ini tidak memiliki batas analisis ulang per makanan.", regenAllowance: "Setiap makanan bisa dianalisis ulang dua kali.", analyzeMeal: "Analisis makanan",
   },
 } as const;
 
@@ -45,6 +48,8 @@ export function ProfilePage() {
   const month = selectedMonth ?? currentMonth;
   const [monthData, setMonthData] = useState<{ month: string; entries: WeightEntry[]; previous: WeightEntry | null; error: boolean } | null>(null);
   const [historyRetry, setHistoryRetry] = useState(0);
+  const [analysisQuota, setAnalysisQuota] = useState<AnalysisQuota | null>(null);
+  const [clockMs, setClockMs] = useState(() => Date.now());
   const number = new Intl.NumberFormat(language === "id" ? "id-ID" : "en-US", { maximumFractionDigits: 1 });
   const weightUnit = profile.unitSystem === "imperial" ? "lb" : "kg";
   const monthLabel = month ? new Intl.DateTimeFormat(language === "id" ? "id-ID" : "en-US", { month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(`${month}-01T00:00:00Z`)) : "";
@@ -55,6 +60,26 @@ export function ProfilePage() {
   const first = weights.at(0);
   const toGoal = latest && goalKg !== null ? displayWeight(Math.abs(latest.kg - goalKg), profile.unitSystem) : null;
   const progress = latest && goalKg !== null && first && first.kg !== goalKg ? Math.min(100, Math.max(0, ((first.kg - latest.kg) / (first.kg - goalKg)) * 100)) : null;
+  const resetCountdown = analysisResetCountdown(analysisQuota?.resets_at ?? null, language, clockMs);
+
+  useEffect(() => {
+    let active = true;
+    void loadAnalysisQuota().then((quota) => { if (active) setAnalysisQuota(quota); }).catch(() => {});
+    return () => { active = false; };
+  }, []);
+  useEffect(() => {
+    if (!analysisQuota?.resets_at) return;
+    const resetMs = Date.parse(analysisQuota.resets_at);
+    if (!Number.isFinite(resetMs)) return;
+    const tick = () => {
+      const now = Date.now();
+      setClockMs(now);
+      if (now >= resetMs) void loadAnalysisQuota().then(setAnalysisQuota).catch(() => {});
+    };
+    const interval = window.setInterval(tick, 60_000);
+    const resetTimer = window.setTimeout(tick, Math.max(0, resetMs - Date.now()) + 500);
+    return () => { window.clearInterval(interval); window.clearTimeout(resetTimer); };
+  }, [analysisQuota?.resets_at]);
 
   useEffect(() => {
     if (!month) return;
@@ -108,6 +133,11 @@ export function ProfilePage() {
         <div className="min-w-0 flex-1"><p className="text-sm font-bold text-[#dbf3ff]">{profile.name ? text.member : text.newMember}</p><h1 className="mt-1 break-words text-3xl font-extrabold tracking-[-.06em] sm:text-5xl">{profile.name || "Nourish"}</h1><p className="mt-2 text-sm text-[#dbf3ff]">{complete ? text.status : text.missing}</p></div>
       </div>
       <div className="relative mt-6 flex flex-wrap gap-3"><button className="btn rounded-xl border-0 bg-brand-sun font-extrabold text-[#143345] hover:bg-brand-lemon" type="button" onClick={() => setEditing(true)}>{complete ? text.edit : text.start} ↗</button><button className="btn btn-outline rounded-xl border-white/60 text-white hover:bg-white/10" type="button" disabled={photoBusy} onClick={() => photoInput.current?.click()}>{photoBusy ? "…" : text.photo}</button><input ref={photoInput} className="hidden" type="file" accept="image/jpeg,image/png,image/webp" onChange={choosePhoto} disabled={photoBusy} /></div>
+    </section>
+
+    <section className="flex flex-wrap items-center justify-between gap-4 rounded-[1.5rem] border border-line bg-surface p-5 shadow-sm sm:p-6" aria-label={text.analysisAllowance}>
+      <div><h2 className="text-lg font-extrabold">{text.analysisAllowance}</h2><p className="mt-1 text-sm text-muted"><strong className="text-xl text-primary">{analysisQuota?.unlimited ? text.unlimited : analysisQuota ? `${analysisQuota.daily_remaining}/${analysisQuota.daily_limit}` : "…"}</strong> {analysisQuota?.unlimited ? text.unlimitedAnalyses : text.analysesLeft}</p><p className="mt-1 text-xs text-muted">{analysisQuota?.unlimited ? text.unlimitedRegen : `${text.regenAllowance} ${resetCountdown}`}</p></div>
+      <Link className="btn btn-outline rounded-xl border-primary/40 text-primary" href="/camera">{text.analyzeMeal}</Link>
     </section>
 
     <section className="grid gap-4 sm:grid-cols-2" aria-label={text.basics}>

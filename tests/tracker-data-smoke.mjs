@@ -1,11 +1,14 @@
 import assert from "node:assert/strict";
 
 const { displayHeight, displayWeight, estimateTargets, feetAndInches, heightToCm, isCalorieWarning, leanMassWeightRange, nutritionStatus, referenceWeightRange, scalePortion, weightToKg } = await import("../modules/tracker/nutrition.ts");
-const { ageFromBirthDate, calendarDisplayStatus, clearTrackerData, fetchTargetEstimate, initializeTracker, isValidDate, loadCalendar, loadWeightMonth, localDateKey, removeMeal, saveAvatar, saveMeal, saveSetup, saveWeight } = await import("../modules/tracker/tracker-data.ts");
+const { ageFromBirthDate, analysisResetCountdown, calendarDisplayStatus, clearTrackerData, fetchTargetEstimate, initializeTracker, isValidDate, loadCalendar, loadWeightMonth, localDateKey, removeMeal, saveAvatar, saveMeal, saveSetup, saveWeight } = await import("../modules/tracker/tracker-data.ts");
 const { formatWeightDate, shiftWeightMonth, weightMonthSeries } = await import("../modules/tracker/pages/profile/weight-history.ts");
 
 assert.equal(isValidDate("2026-02-30"), false);
 assert.equal(isValidDate("2026-02-28"), true);
+assert.equal(analysisResetCountdown("2026-10-10T00:00:00+07:00", "en", Date.parse("2026-10-09T16:00:00Z")), "Resets in 1h 0m");
+assert.equal(analysisResetCountdown("2026-10-10T00:00:00+07:00", "id", Date.parse("2026-10-09T16:59:30Z")), "Diperbarui dalam 1 menit");
+assert.equal(analysisResetCountdown("2026-10-10T00:00:00+07:00", "en", Date.parse("2026-10-09T17:00:00Z")), "Updating allowance…");
 assert.equal(ageFromBirthDate("2000-10-08", "2026-10-07"), 25);
 assert.equal(ageFromBirthDate("2000-10-07", "2026-10-07"), 26);
 assert.equal(formatWeightDate("2026-10-07", "en"), "07-Oct-2026");
@@ -75,8 +78,8 @@ globalThis.fetch = async (url, options = {}) => {
   if (method !== "GET") { writes++; assert.equal(options.headers.get("X-XSRF-TOKEN"), "abc="); }
   const body = options.body && !(options.body instanceof FormData) ? JSON.parse(options.body) : null;
   const json = (data) => Response.json({ data });
-  if (path === "/api/v1/me" && method === "GET") return json({ id: 1, name: profile?.name ?? "Kai", phone_e164: "+6281234567890", email: null, avatar_url: avatarUrl, has_password: true });
-  if (path === "/api/v1/me/avatar" && method === "PUT") { assert.ok(options.body instanceof FormData); assert.equal(options.body.get("image")?.type, "image/jpeg"); avatarUrl = "/api/v1/me/avatar?v=uploaded.jpg"; return json({ id: 1, name: "Kai", phone_e164: "+6281234567890", email: null, avatar_url: avatarUrl, has_password: true }); }
+  if (path === "/api/v1/me" && method === "GET") return json({ id: 1, name: profile?.name ?? "Kai", email: null, avatar_url: avatarUrl });
+  if (path === "/api/v1/me/avatar" && method === "PUT") { assert.ok(options.body instanceof FormData); assert.equal(options.body.get("image")?.type, "image/jpeg"); avatarUrl = "/api/v1/me/avatar?v=uploaded.jpg"; return json({ id: 1, name: "Kai", email: null, avatar_url: avatarUrl }); }
   if (path === "/api/v1/me/profile" && method === "GET") return json(profile);
   if (path === "/api/v1/me/weights" && method === "GET" && new URL(url).searchParams.get("from") === "2026-10-01") {
     const page = new URL(url).searchParams.get("page");
