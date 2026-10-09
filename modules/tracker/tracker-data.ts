@@ -15,7 +15,8 @@ export interface MealEntry { id: string; date: string; time: string; name: strin
 export interface NutritionSummary { totals: LoggedAmounts; known: Record<Nutrient, boolean>; remaining: LoggedAmounts; status: "empty" | "no_target" | "partial" | "progress" | "complete" | "over" }
 export interface DaySummary { date: string; target: NutrientAmounts | null; nutrition: NutritionSummary; weight: WeightEntry | null; meals: MealEntry[] }
 export interface CalendarSummary { month: string; days: { date: string; status: NutritionSummary["status"]; has_target: boolean; meal_count: number; calories: number | null; calorie_warning: boolean; weight_kg: number | null }[]; completed_days: number; logged_days: number; weigh_ins: number; weight_change_kg: number | null }
-export interface ApiUser { id: number; name: string; phone_e164: string | null; email: string | null; avatar_url: string | null; has_password: boolean }
+export interface ApiUser { id: number; name: string; email: string | null; avatar_url: string | null }
+export interface AnalysisQuota { date: string; unlimited: boolean; daily_limit: number | null; daily_used: number; daily_remaining: number | null; resets_at: string | null; regeneration_limit: number | null; regenerations_used: number | null; regenerations_remaining: number | null }
 export interface TrackerData { profile: Profile; weights: WeightEntry[]; meals: MealEntry[]; days: Record<string, DaySummary>; user: ApiUser | null; status: "idle" | "loading" | "ready" | "error" | "unauthorized" }
 
 const emptyProfile: Profile = { name: "", birthDate: "", age: null, heightCm: null, unitSystem: "metric", sex: "", build: "", bodyFatPercent: null, activityMinutes: null, activityType: "", goal: "", goalWeightKg: null, targets: null, targetSource: null, avatar: "" };
@@ -34,6 +35,16 @@ export function isValidDate(value: string): boolean {
 export function localDateKey(date = new Date()): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
+export function analysisResetCountdown(resetsAt: string | null, language: "en" | "id", nowMs = Date.now()): string {
+  if (!resetsAt) return "";
+  const resetMs = Date.parse(resetsAt);
+  if (!Number.isFinite(resetMs)) return "";
+  const minutes = Math.max(0, Math.ceil((resetMs - nowMs) / 60_000));
+  if (minutes === 0) return language === "id" ? "Memperbarui jatah…" : "Updating allowance…";
+  const hours = Math.floor(minutes / 60);
+  if (hours === 0) return language === "id" ? `Diperbarui dalam ${minutes} menit` : `Resets in ${minutes}m`;
+  return language === "id" ? `Diperbarui dalam ${hours} jam ${minutes % 60} menit` : `Resets in ${hours}h ${minutes % 60}m`;
+}
 export function ageFromBirthDate(value: string, today = localDateKey()): number | null {
   if (!isValidDate(value) || !isValidDate(today) || value > today) return null;
   const age = Number(today.slice(0, 4)) - Number(value.slice(0, 4)) - (today.slice(5) < value.slice(5) ? 1 : 0);
@@ -49,6 +60,10 @@ function subscribe(listener: () => void) { listeners.add(listener); return () =>
 function publish(next: TrackerData) { snapshot = next; listeners.forEach((listener) => listener()); }
 export function useTrackerData() { return useSyncExternalStore(subscribe, () => snapshot, () => empty); }
 export function clearTrackerData() { generation += 1; loading = null; publish(empty); }
+export async function loadAnalysisQuota(analysisId?: string): Promise<AnalysisQuota> {
+  const path = `/api/v1/me/analysis-quota${analysisId ? `?analysis_id=${encodeURIComponent(analysisId)}` : ""}`;
+  return (await api<{ data: AnalysisQuota }>(path)).data;
+}
 export async function saveAvatar(image: Blob): Promise<void> {
   const requestGeneration = generation;
   const body = new FormData();

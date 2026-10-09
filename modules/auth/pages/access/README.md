@@ -1,3 +1,3 @@
 # Access page
 
-Owns responsive phone login, local-only phone registration, and Google OAuth redirect. Phone input removes trunk zero and sends E.164. Laravel errors mark fields; floating toasts report failures.
+Owns responsive Google sign-in and signup with Terms and Privacy consent. Laravel requires consent for new Google accounts and limits new accounts by IP. Floating toasts report OAuth failures.

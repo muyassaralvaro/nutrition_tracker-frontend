@@ -11,7 +11,7 @@ import { highlightInvalid } from "@/shared/form-validation";
 import { api, ApiError, errorText } from "@/shared/api-client";
 import { NUTRIENTS, NUTRIENT_LIMITS, scalePortion, type LoggedAmounts, type Nutrient } from "../../nutrition";
 import { nutrientLabels, nutrientUnits } from "../../nutrition-ui";
-import { isValidDate, loadMeal, localDateKey, saveMeal, useTodayKey, useTrackerData, type MealItem } from "../../tracker-data";
+import { analysisResetCountdown, isValidDate, loadAnalysisQuota, loadMeal, localDateKey, saveMeal, useTodayKey, useTrackerData, type AnalysisQuota, type MealItem } from "../../tracker-data";
 
 const subscribeRoute = () => () => {};
 function routeDate() {
@@ -43,6 +43,7 @@ const copy = {
     editTitle: "Edit your meal", editHint: "Adjust the logged time and nutrition values whenever needed.", missing: "Meal not found.", loadingMeal: "Loading meal…", backHome: "Back to home",
     mealName: "Food or meal name", mealPlaceholder: "e.g. rice and chicken", date: "Date", time: "Meal time", required: "Energy and macros", optional: "Fiber and minerals",
     save: "Save meal", update: "Update meal", saved: "Meal saved in nutrition log.", updated: "Meal updated.", invalid: "Check highlighted fields.", item: "Dish", description: "Short dish description", grams: "Estimated portion (g, optional)",
+    dailyQuota: "New AI meal analyses remaining", regenQuota: "Regenerations left for this meal", unlimited: "Unlimited", dailyExhausted: "Your 7 AI analyses are used. Enter nutrition manually or try again after the reset.", regenExhausted: "This meal has used both AI regenerations. Edit the estimate manually.", differentMeal: "Use the same photo or food name when regenerating.", reanalyzeText: "Reanalyze this meal",
   },
   id: {
     eyebrow: "KAMERA MAKANAN", title: "Kenali isi piringmu.", intro: "Kamera langsung terbuka. Ambil foto makanan, ganti kamera, atau unggah foto.",
@@ -55,6 +56,7 @@ const copy = {
     editTitle: "Ubah makanan", editHint: "Ubah waktu dan nilai gizi makanan kapan saja.", missing: "Makanan tidak ditemukan.", loadingMeal: "Memuat makanan…", backHome: "Kembali ke beranda",
     mealName: "Nama makanan", mealPlaceholder: "cont. nasi dan ayam", date: "Tanggal", time: "Waktu makan", required: "Energi dan makro", optional: "Serat dan mineral",
     save: "Simpan makanan", update: "Perbarui makanan", saved: "Makanan ditambah ke catatan gizi.", updated: "Makanan diperbarui.", invalid: "Periksa kolom yang ditandai.", item: "Hidangan", description: "Deskripsi singkat hidangan", grams: "Perkiraan porsi (g, opsional)",
+    dailyQuota: "Sisa analisis AI", regenQuota: "Sisa analisis ulang makanan ini", unlimited: "Tanpa batas", dailyExhausted: "Jatah 7 analisis AI habis. Isi gizi manual atau coba lagi setelah jatah diperbarui.", regenExhausted: "Dua analisis ulang makanan ini sudah dipakai. Perbaiki perkiraan secara manual.", differentMeal: "Gunakan foto atau nama makanan yang sama saat menganalisis ulang.", reanalyzeText: "Analisis ulang makanan ini",
   },
 } as const;
 
@@ -85,6 +87,8 @@ export function CameraPage() {
   const [analysisStage, setAnalysisStage] = useState<"details" | "uploading" | "queued" | "processing">("details");
   const [photoEnabled, setPhotoEnabled] = useState<boolean | null>(null);
   const [analysisId, setAnalysisId] = useState<string | null>(null);
+  const [quota, setQuota] = useState<AnalysisQuota | null>(null);
+  const [clockMs, setClockMs] = useState(() => Date.now());
   const [mealTitle, setMealTitle] = useState("");
   const [items, setItems] = useState<ReviewItem[]>([blankItem()]);
   const [busy, setBusy] = useState(false);
@@ -99,7 +103,12 @@ export function CameraPage() {
   const mealFormRef = useRef<HTMLFormElement>(null);
   const contextDialog = useRef<HTMLDialogElement>(null);
   const promptedPhoto = useRef<File | null>(null);
+  const manualAnalysisName = useRef<string | null>(null);
   const readyForReview = analysisReady || (mode === "review" && photoEnabled === false);
+  const dailyAllowance = quota?.unlimited ? text.unlimited : `${quota?.daily_remaining ?? "…"}/${quota?.daily_limit ?? "…"}`;
+  const regenerationAllowance = quota?.unlimited ? text.unlimited : `${quota?.regenerations_remaining ?? "…"}/${quota?.regeneration_limit ?? "…"}`;
+  const resetCountdown = analysisResetCountdown(quota?.resets_at ?? null, language, clockMs);
+  const quotaDetail = analysisId ? `${text.regenQuota}: ${regenerationAllowance}` : `${text.dailyQuota}: ${dailyAllowance}${resetCountdown ? ` · ${resetCountdown}` : ""}`;
 
   useEffect(() => {
     if (mode !== "camera") return;
@@ -135,7 +144,21 @@ export function CameraPage() {
   useEffect(() => () => { if (preview) URL.revokeObjectURL(preview); }, [preview]);
   useEffect(() => {
     api<{ data: { photo_analysis_enabled: boolean } }>("/api/v1/auth/options").then(({ data }) => setPhotoEnabled(data.photo_analysis_enabled)).catch(() => {});
+    void loadAnalysisQuota().then(setQuota).catch(() => {});
   }, []);
+  useEffect(() => {
+    if (!quota?.resets_at) return;
+    const resetMs = Date.parse(quota.resets_at);
+    if (!Number.isFinite(resetMs)) return;
+    const tick = () => {
+      const now = Date.now();
+      setClockMs(now);
+      if (now >= resetMs) void loadAnalysisQuota(analysisId ?? undefined).then(setQuota).catch(() => {});
+    };
+    const interval = window.setInterval(tick, 60_000);
+    const resetTimer = window.setTimeout(tick, Math.max(0, resetMs - Date.now()) + 500);
+    return () => { window.clearInterval(interval); window.clearTimeout(resetTimer); };
+  }, [quota?.resets_at, analysisId]);
   useEffect(() => {
     if (photoEnabled === false) { contextDialog.current?.close(); return; }
     if (mode !== "review" || !selectedPhoto || promptedPhoto.current === selectedPhoto) return;
@@ -159,6 +182,17 @@ export function CameraPage() {
     analysisInFlight.current = false;
     for (const id of retainedAnalysisIds.current) discardAnalysis(id);
     setAnalysisId(null);
+    manualAnalysisName.current = null;
+  }
+  function refreshQuota(id?: string | null) {
+    void loadAnalysisQuota(id ?? undefined).then(setQuota).catch(() => {});
+  }
+  function quotaError(error: unknown): { en: string; id: string } | null {
+    if (!(error instanceof ApiError)) return null;
+    if (error.code === "daily_analysis_limit") return { en: copy.en.dailyExhausted, id: copy.id.dailyExhausted };
+    if (error.code === "regeneration_limit") return { en: copy.en.regenExhausted, id: copy.id.regenExhausted };
+    if (error.code === "different_meal") return { en: copy.en.differentMeal, id: copy.id.differentMeal };
+    return null;
   }
   function openCamera() { cancelAnalysis(); contextDialog.current?.close(); setPreview(null); setSelectedPhoto(null); setFoodContext(""); setContextInvalid(false); setAnalysisReady(false); setAnalysisStage("details"); setMealTitle(""); setItems([blankItem()]); requestId.current = null; setCameraState("loading"); setFlowMode("camera"); }
   function switchCamera() { setCameraState("loading"); setFacing((current) => current === "environment" ? "user" : "environment"); }
@@ -171,6 +205,8 @@ export function CameraPage() {
       const { data: first } = await api<{ data: Analysis }>("/api/v1/meal-analyses", { method: "POST", body: upload });
       createdId = first.id;
       retainedAnalysisIds.current.add(first.id);
+      if (!isPhoto) manualAnalysisName.current = String(upload.get("name") ?? "");
+      refreshQuota(first.id);
       if (analysisGeneration.current !== generation) { discardAnalysis(first.id); return; }
       setAnalysisStage("queued");
       for (let count = 0; count < 45; count++) {
@@ -182,8 +218,8 @@ export function CameraPage() {
         if (data.status === "succeeded" && data.draft) {
           setMealTitle(data.draft.title);
           setItems(data.draft.items.map(reviewItem));
-          if (isPhoto) { setAnalysisId(first.id); setAnalysisReady(true); }
-          else discardAnalysis(first.id);
+          setAnalysisId(first.id);
+          if (isPhoto) setAnalysisReady(true);
           setAnalysisStage("details");
           if (previousId && previousId !== first.id) discardAnalysis(previousId);
           return;
@@ -195,6 +231,7 @@ export function CameraPage() {
     } catch (error) {
       if (analysisGeneration.current !== generation) return;
       setAnalysisStage("details");
+      refreshQuota(previousId ?? createdId);
       if (isPhoto && error instanceof ApiError && error.errors.food_context) {
         if (createdId) discardAnalysis(createdId);
         setContextInvalid(true);
@@ -203,8 +240,8 @@ export function CameraPage() {
         return;
       }
       if (!isPhoto) {
-        if (createdId) discardAnalysis(createdId);
-        showToast({ en: error instanceof ApiError && error.status !== 503 ? errorText(error) : copy.en.estimateFailed, id: error instanceof ApiError && error.status !== 503 ? errorText(error) : copy.id.estimateFailed }, "error");
+        if (createdId) { if (previousId) discardAnalysis(createdId); else setAnalysisId(createdId); }
+        showToast(quotaError(error) ?? { en: error instanceof ApiError && error.status !== 503 ? errorText(error) : copy.en.estimateFailed, id: error instanceof ApiError && error.status !== 503 ? errorText(error) : copy.id.estimateFailed }, "error");
         return;
       }
       if (createdId) {
@@ -213,7 +250,7 @@ export function CameraPage() {
       }
       setAnalysisReady(true);
       const languageMismatch = error instanceof Error && error.message === "language_mismatch";
-      showToast({ en: languageMismatch ? copy.en.languageFailed : error instanceof ApiError && error.status !== 503 ? errorText(error) : copy.en.analysisFailed, id: languageMismatch ? copy.id.languageFailed : copy.id.analysisFailed }, "error");
+      showToast(quotaError(error) ?? { en: languageMismatch ? copy.en.languageFailed : error instanceof ApiError && error.status !== 503 ? errorText(error) : copy.en.analysisFailed, id: languageMismatch ? copy.id.languageFailed : copy.id.analysisFailed }, "error");
     }
   }
   function reviewPhoto(file: File) {
@@ -244,6 +281,7 @@ export function CameraPage() {
     upload.append("image", selectedPhoto);
     upload.append("language", language);
     if (foodContext.trim()) upload.append("food_context", foodContext.trim());
+    if (analysisId) upload.append("retry_of", analysisId);
     void analyzeMeal(upload, generation, analysisId, true).finally(() => {
       if (analysisGeneration.current === generation) analysisInFlight.current = false;
     });
@@ -267,14 +305,15 @@ export function CameraPage() {
       return;
     }
     const upload = new FormData();
-    upload.append("name", mealTitle.trim());
+    upload.append("name", analysisId ? manualAnalysisName.current ?? mealTitle.trim() : mealTitle.trim());
     upload.append("language", language);
     if (items[0].description.trim()) upload.append("description", items[0].description.trim());
     if (items[0].grams) upload.append("grams", items[0].grams);
+    if (analysisId) upload.append("retry_of", analysisId);
     analysisInFlight.current = true;
     const generation = ++analysisGeneration.current;
     setAnalysisStage("queued");
-    void analyzeMeal(upload, generation, null, false).finally(() => {
+    void analyzeMeal(upload, generation, analysisId, false).finally(() => {
       if (analysisGeneration.current === generation) analysisInFlight.current = false;
     });
   }
@@ -347,7 +386,7 @@ export function CameraPage() {
     const input = {
       date: String(values.get("date") ?? ""),
       time: String(values.get("time") ?? ""),
-      name: name.value.trim(), items: mealItems, analysisId: mode === "review" ? analysisId : null,
+      name: name.value.trim(), items: mealItems, analysisId: mode === "review" || mode === "manual" ? analysisId : null,
     };
     const serialized = JSON.stringify(input);
     if (!requestId.current || requestId.current.payload !== serialized) requestId.current = { payload: serialized, id: crypto.randomUUID() };
@@ -355,7 +394,7 @@ export function CameraPage() {
     try {
       await saveMeal(input, editId || undefined, requestId.current.id);
       showToast({ en: editId ? copy.en.updated : copy.en.saved, id: editId ? copy.id.updated : copy.id.saved }, "success");
-      if (editId) router.push("/home"); else openCamera();
+      if (editId) router.push("/home"); else { if (analysisId) retainedAnalysisIds.current.delete(analysisId); openCamera(); }
     } catch (error) {
       if (error instanceof ApiError) {
         for (const [field, messages] of Object.entries(error.errors)) {
@@ -379,7 +418,7 @@ export function CameraPage() {
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/50 via-transparent to-black/70" aria-hidden="true" />
         <div className="pointer-events-none absolute inset-x-8 top-[22%] bottom-[31%] rounded-[2rem] border border-white/25 sm:inset-x-[25%]" aria-hidden="true" />
         <div className="absolute top-[max(1rem,env(safe-area-inset-top))] right-4 left-4 mx-auto flex max-w-5xl items-start justify-between gap-4 sm:right-8 sm:left-8">
-          <div><p className="text-[.65rem] font-extrabold tracking-[.18em] text-brand-lemon">{text.eyebrow}</p><h1 className="mt-1 text-xl font-extrabold tracking-[-.04em] sm:text-2xl">{text.camera}</h1></div>
+          <div><p className="text-[.65rem] font-extrabold tracking-[.18em] text-brand-lemon">{text.eyebrow}</p><h1 className="mt-1 text-xl font-extrabold tracking-[-.04em] sm:text-2xl">{text.camera}</h1>{quota && <p className="mt-1 text-xs font-bold text-white/85">{text.dailyQuota}: {dailyAllowance}</p>}</div>
           <button className="grid size-12 shrink-0 place-items-center rounded-full border border-white/30 bg-black/45 text-white shadow-lg backdrop-blur-sm transition-colors hover:bg-black/65" type="button" aria-label={text.switch} title={text.switch} onClick={switchCamera}><svg className="size-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 8V5h5m13 11v3h-5M4.5 15a8 8 0 0 0 13 3M19.5 9a8 8 0 0 0-13-3" /><path d="M8 12h8m-6-2v4m4-4v4" /></svg></button>
         </div>
         {cameraState !== "ready" && <div className="absolute inset-x-6 top-1/2 mx-auto max-w-sm -translate-y-1/2 rounded-2xl bg-black/50 p-5 text-center text-sm font-bold leading-6 backdrop-blur-sm" role="status">{text[cameraState]}</div>}
@@ -400,17 +439,19 @@ export function CameraPage() {
         {analysisStage !== "details" && <div className="absolute inset-0 grid place-items-center bg-black/40 px-5 text-white backdrop-blur-[1px]" role="status" aria-live="polite"><div className="w-full max-w-xs rounded-2xl border border-white/25 bg-black/65 px-6 py-5 text-center shadow-lg"><p className="text-sm font-extrabold">{analysisStage === "uploading" ? text.uploading : analysisStage === "queued" ? text.queued : text.analyzing}</p><progress className="progress progress-warning mt-4 w-full" aria-label={text.analyzing} /></div></div>}
       </section>}
 
-      {mode === "review" && photoEnabled !== false && analysisStage === "details" && <div className="flex justify-end"><button className="btn btn-outline rounded-xl border-line bg-surface text-primary" type="button" disabled={busy} onClick={() => contextDialog.current?.showModal()}>{analysisReady ? items[0]?.name ? text.notAccurate : text.retryAnalysis : text.addDetails}</button></div>}
+      {mode === "review" && photoEnabled !== false && analysisStage === "details" && <div className="flex flex-wrap items-center justify-between gap-3"><p className="text-sm font-bold text-muted">{quota && quotaDetail}</p><button className="btn btn-outline rounded-xl border-line bg-surface text-primary" type="button" disabled={busy || (analysisId ? quota?.regenerations_remaining === 0 : quota?.daily_remaining === 0)} onClick={() => contextDialog.current?.showModal()}>{analysisReady ? items[0]?.name ? text.notAccurate : text.retryAnalysis : text.addDetails}</button></div>}
 
       {mode === "review" && <dialog ref={contextDialog} className="modal z-50" aria-labelledby="food-context-title">
         <div className="modal-box max-h-[calc(100dvh-2rem)] max-w-lg overflow-y-auto rounded-[1.6rem] border border-line bg-surface p-5 text-ink shadow-2xl sm:p-7">
           <form method="dialog" className="float-right"><button className="btn btn-ghost size-11 rounded-full" type="submit" aria-label={text.close}>✕</button></form>
           <h2 id="food-context-title" className="pr-10 text-xl font-extrabold tracking-[-.04em]">{text.foodContextTitle}</h2>
           <p id="food-context-hint" className="mt-2 text-sm leading-6 text-muted">{text.foodContextHint}</p>
+          {quota && <p className="mt-2 text-sm font-bold text-primary">{quotaDetail}</p>}
+          {!analysisId && quota?.daily_remaining === 0 && <p className="mt-2 text-sm text-muted">{text.dailyExhausted}</p>}
           <label className="mt-5 grid gap-2 text-sm font-bold" htmlFor="food-context">{text.foodContext}</label>
           <textarea id="food-context" className={`textarea mt-2 min-h-28 w-full max-w-none rounded-xl border bg-base-200 text-ink shadow-sm placeholder:text-muted/70 focus:border-primary focus:shadow-md ${contextInvalid ? "border-error ring-2 ring-error/30" : "border-line"}`} maxLength={500} placeholder={text.foodContextPlaceholder} value={foodContext} disabled={analysisStage !== "details" || photoEnabled === false || busy} aria-invalid={contextInvalid} aria-describedby={contextInvalid ? "food-context-hint food-context-error" : "food-context-hint"} onChange={(event) => { setFoodContext(event.target.value); setContextInvalid(false); }} />
           {contextInvalid && <p id="food-context-error" className="mt-2 text-sm text-error" role="alert">{text.foodContextInvalid}</p>}
-          <div className="mt-3 flex flex-wrap items-center justify-between gap-3"><span className="text-xs text-muted">{foodContext.length}/500</span><button className="btn btn-primary rounded-xl px-5 font-extrabold" type="button" disabled={analysisStage !== "details" || photoEnabled === false || busy} onClick={beginAnalysis}>{analysisReady ? text.reanalyzePhoto : text.analyzePhoto}</button></div>
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-3"><span className="text-xs text-muted">{foodContext.length}/500</span><div className="flex flex-wrap gap-2">{!analysisId && quota?.daily_remaining === 0 && <button className="btn btn-outline rounded-xl" type="button" onClick={openManual}>{text.manual}</button>}<button className="btn btn-primary rounded-xl px-5 font-extrabold" type="button" disabled={analysisStage !== "details" || photoEnabled === false || busy || (analysisId ? quota?.regenerations_remaining === 0 : quota?.daily_remaining === 0)} onClick={beginAnalysis}>{analysisId ? text.reanalyzePhoto : text.analyzePhoto}</button></div></div>
         </div>
         <form method="dialog" className="modal-backdrop"><button type="submit" aria-label={text.close}>{text.close}</button></form>
       </dialog>}
@@ -435,7 +476,7 @@ export function CameraPage() {
             <h3 className="font-extrabold text-primary">{text.item}{items.length > 1 ? ` ${index + 1}` : ""}</h3>
             {items.length > 1 && <label className="grid gap-2 text-sm font-bold">{text.item}<input className={inputClass} name={`item-${index}-name`} maxLength={160} value={item.name} onChange={(event) => { event.currentTarget.setCustomValidity(""); updateItem(index, { name: event.target.value }); }} required /></label>}
             <div className="grid gap-3 sm:grid-cols-2"><label className="grid gap-2 text-sm font-bold">{text.description}<input className={inputClass} name={`item-${index}-description`} maxLength={200} value={item.description} onChange={(event) => { event.currentTarget.setCustomValidity(""); updateItem(index, { description: event.target.value }); }} required={mode === "review" && Boolean(analysisId)} /></label><label className="grid gap-2 text-sm font-bold">{text.grams}<input className={inputClass} name={`item-${index}-grams`} type="number" min="0.1" max="2000" step="0.1" inputMode="decimal" value={item.grams} onChange={(event) => { event.currentTarget.setCustomValidity(""); changeGrams(index, event.target.value); }} /></label></div>
-            {mode === "manual" && index === 0 && photoEnabled !== false && <div className="rounded-xl border border-primary/25 bg-primary/5 p-4"><p className="text-sm leading-5 text-muted">{text.estimateHint}</p><button className="btn btn-outline mt-3 rounded-xl border-primary/40 bg-surface font-extrabold text-primary" type="button" onClick={beginTextAnalysis}>{text.estimateButton}</button>{analysisStage !== "details" && <div className="mt-3" role="status" aria-live="polite"><p className="text-xs font-bold text-primary">{analysisStage === "processing" ? text.estimateProcessing : text.estimateQueued}</p><progress className="progress progress-primary mt-2 w-full" aria-label={text.estimateProcessing} /></div>}</div>}
+            {mode === "manual" && index === 0 && photoEnabled !== false && <div className="rounded-xl border border-primary/25 bg-primary/5 p-4"><p className="text-sm leading-5 text-muted">{text.estimateHint}</p>{quota && <p className="mt-2 text-xs font-bold text-primary">{quotaDetail}</p>}<button className="btn btn-outline mt-3 rounded-xl border-primary/40 bg-surface font-extrabold text-primary" type="button" disabled={analysisStage !== "details" || busy || (analysisId ? quota?.regenerations_remaining === 0 : quota?.daily_remaining === 0)} onClick={beginTextAnalysis}>{analysisId ? text.reanalyzeText : text.estimateButton}</button>{analysisStage !== "details" && <div className="mt-3" role="status" aria-live="polite"><p className="text-xs font-bold text-primary">{analysisStage === "processing" ? text.estimateProcessing : text.estimateQueued}</p><progress className="progress progress-primary mt-2 w-full" aria-label={text.estimateProcessing} /></div>}</div>}
             <div><h4 className="text-sm font-extrabold text-primary">{text.required}</h4><div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">{NUTRIENTS.slice(0, 4).map((key) => <label key={key} className="grid gap-2 text-xs font-bold">{nutrientLabels[language][key]} ({nutrientUnits[key]})<input className={inputClass} name={`item-${index}-${key}`} type="number" min={0} max={NUTRIENT_LIMITS[key]} step="0.01" inputMode="decimal" value={item.nutrients[key]} onChange={(event) => { event.currentTarget.setCustomValidity(""); changeNutrient(index, key, event.target.value); }} required /></label>)}</div></div>
             <div><h4 className="text-sm font-extrabold text-primary">{text.optional}</h4><div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-5">{NUTRIENTS.slice(4).map((key) => <label key={key} className="grid gap-2 text-xs font-bold">{nutrientLabels[language][key]} ({nutrientUnits[key]})<input className={inputClass} name={`item-${index}-${key}`} type="number" min={0} max={NUTRIENT_LIMITS[key]} step="0.01" inputMode="decimal" placeholder="—" value={item.nutrients[key]} onChange={(event) => { event.currentTarget.setCustomValidity(""); changeNutrient(index, key, event.target.value); }} /></label>)}</div></div>
           </section>)}

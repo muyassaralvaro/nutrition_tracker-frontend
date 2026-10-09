@@ -3,10 +3,12 @@ export const API_ORIGIN = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8
 export class ApiError extends Error {
   status: number;
   errors: Record<string, string[]>;
-  constructor(status: number, message: string, errors: Record<string, string[]> = {}) {
+  code?: string;
+  constructor(status: number, message: string, errors: Record<string, string[]> = {}, code?: string) {
     super(message);
     this.status = status;
     this.errors = errors;
+    this.code = code;
   }
 }
 
@@ -31,7 +33,7 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
   if (response.status === 204) return undefined as T;
   const body = await response.json().catch(() => null);
   if (response.status === 401 && typeof window !== "undefined") window.dispatchEvent(new Event("nourish:unauthorized"));
-  if (!response.ok) throw new ApiError(response.status, body?.message ?? `Request failed (${response.status}).`, body?.errors ?? {});
+  if (!response.ok) throw new ApiError(response.status, body?.message ?? `Request failed (${response.status}).`, body?.errors ?? {}, body?.code);
   return body as T;
 }
 
