@@ -39,7 +39,7 @@ const copy = {
     denied: "Camera access is blocked. Allow it in your browser, or upload a photo.", unavailable: "No camera found here. Upload a photo or enter the meal manually.", error: "Camera could not start. Try again or upload a photo.",
     captureError: "Camera has no frame yet. Try again.", invalidImage: "Choose a JPG, PNG, or WebP image up to 10 MB.",
     photoAlt: "Selected meal photo", photoHint: "One dish, one estimate. Check the portion and nutrients before saving.", foodContextTitle: "Add food details", foodContext: "Extra details (optional)", foodContextPlaceholder: "e.g. strawberry matcha mochi, one piece", foodContextHint: "Name the dish, toppings, or portion if the photo alone may be unclear.", foodContextInvalid: "Keep food details to 500 characters or fewer.", analyzePhoto: "Analyze meal photo", reanalyzePhoto: "Reanalyze same photo", addDetails: "Add details or analyze", retryAnalysis: "Try analysis again", notAccurate: "Result not accurate?", close: "Close", analysisFailed: "Photo analysis unavailable. Enter the meal details manually below.", languageFailed: "Model used an unsupported language. Retake the photo or enter the meal manually.",
-    manualTitle: "Enter meal details", manualHint: "Enter the whole dish. Leave unknown minerals empty.",
+    manualTitle: "Enter meal details", manualHint: "Describe the dish for an optional AI estimate, or enter nutrition yourself. Leave unknown minerals empty.", estimateHint: "Optional AI estimate from your food details. Review every value before saving.", estimateButton: "Analyze without photo", estimateQueued: "Waiting for food estimate…", estimateProcessing: "Estimating calories and nutrients…", estimateFailed: "Food estimate unavailable. You can still enter nutrition manually.", estimateName: "Add a food name before analyzing.",
     editTitle: "Edit your meal", editHint: "Adjust the logged time and nutrition values whenever needed.", missing: "Meal not found.", loadingMeal: "Loading meal…", backHome: "Back to home",
     mealName: "Food or meal name", mealPlaceholder: "e.g. rice and chicken", date: "Date", time: "Meal time", required: "Energy and macros", optional: "Fiber and minerals",
     save: "Save meal", update: "Update meal", saved: "Meal saved in nutrition log.", updated: "Meal updated.", invalid: "Check highlighted fields.", item: "Dish", description: "Short dish description", grams: "Estimated portion (g, optional)",
@@ -51,7 +51,7 @@ const copy = {
     denied: "Akses kamera diblokir. Izinkan lewat browser, atau unggah foto.", unavailable: "Kamera tidak ditemukan. Unggah foto atau isi makanan manual.", error: "Kamera gagal dibuka. Coba lagi atau unggah foto.",
     captureError: "Kamera belum menampilkan gambar. Coba lagi.", invalidImage: "Pilih gambar JPG, PNG, atau WebP hingga 10 MB.",
     photoAlt: "Foto makanan yang dipilih", photoHint: "Satu hidangan, satu perkiraan. Periksa porsi dan gizi sebelum menyimpan.", foodContextTitle: "Tambahkan detail makanan", foodContext: "Detail tambahan (opsional)", foodContextPlaceholder: "cont. mochi matcha stroberi, satu buah", foodContextHint: "Sebutkan hidangan, topping, atau porsi jika foto saja kurang jelas.", foodContextInvalid: "Batasi detail makanan maksimal 500 karakter.", analyzePhoto: "Analisis foto makanan", reanalyzePhoto: "Analisis ulang foto yang sama", addDetails: "Tambah detail atau analisis", retryAnalysis: "Coba analisis lagi", notAccurate: "Hasil tidak sesuai?", close: "Tutup", analysisFailed: "Analisis foto tidak tersedia. Isi detail makanan secara manual di bawah.", languageFailed: "Model memakai bahasa yang tidak didukung. Foto ulang atau isi makanan secara manual.",
-    manualTitle: "Isi detail makanan", manualHint: "Isi seluruh hidangan. Biarkan mineral yang belum diketahui kosong.",
+    manualTitle: "Isi detail makanan", manualHint: "Jelaskan hidangan untuk perkiraan AI opsional, atau isi gizi sendiri. Biarkan mineral yang belum diketahui kosong.", estimateHint: "Perkiraan AI ini opsional. Periksa semua nilai sebelum menyimpan.", estimateButton: "Analisis tanpa foto", estimateQueued: "Menunggu perkiraan makanan…", estimateProcessing: "Memperkirakan kalori dan gizi…", estimateFailed: "Perkiraan makanan tidak tersedia. Kamu tetap bisa mengisi gizi manual.", estimateName: "Isi nama makanan sebelum menganalisis.",
     editTitle: "Ubah makanan", editHint: "Ubah waktu dan nilai gizi makanan kapan saja.", missing: "Makanan tidak ditemukan.", loadingMeal: "Memuat makanan…", backHome: "Kembali ke beranda",
     mealName: "Nama makanan", mealPlaceholder: "cont. nasi dan ayam", date: "Tanggal", time: "Waktu makan", required: "Energi dan makro", optional: "Serat dan mineral",
     save: "Simpan makanan", update: "Perbarui makanan", saved: "Makanan ditambah ke catatan gizi.", updated: "Makanan diperbarui.", invalid: "Periksa kolom yang ditandai.", item: "Hidangan", description: "Deskripsi singkat hidangan", grams: "Perkiraan porsi (g, opsional)",
@@ -96,6 +96,7 @@ export function CameraPage() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const uploadRef = useRef<HTMLInputElement>(null);
+  const mealFormRef = useRef<HTMLFormElement>(null);
   const contextDialog = useRef<HTMLDialogElement>(null);
   const promptedPhoto = useRef<File | null>(null);
   const readyForReview = analysisReady || (mode === "review" && photoEnabled === false);
@@ -162,15 +163,11 @@ export function CameraPage() {
   function openCamera() { cancelAnalysis(); contextDialog.current?.close(); setPreview(null); setSelectedPhoto(null); setFoodContext(""); setContextInvalid(false); setAnalysisReady(false); setAnalysisStage("details"); setMealTitle(""); setItems([blankItem()]); requestId.current = null; setCameraState("loading"); setFlowMode("camera"); }
   function switchCamera() { setCameraState("loading"); setFacing((current) => current === "environment" ? "user" : "environment"); }
   function retryCamera() { setCameraState("loading"); setRetry((current) => current + 1); }
-  function openManual() { cancelAnalysis(); contextDialog.current?.close(); setPreview(null); setSelectedPhoto(null); setFoodContext(""); setMealTitle(""); setItems([blankItem()]); requestId.current = null; setFlowMode("manual"); }
+  function openManual() { cancelAnalysis(); contextDialog.current?.close(); setPreview(null); setSelectedPhoto(null); setFoodContext(""); setAnalysisStage("details"); setAnalysisReady(false); setMealTitle(""); setItems([blankItem()]); requestId.current = null; setFlowMode("manual"); }
 
-  async function analyzePhoto(file: File, generation: number, context: string, previousId: string | null) {
+  async function analyzeMeal(upload: FormData, generation: number, previousId: string | null, isPhoto: boolean) {
     let createdId: string | null = null;
     try {
-      const upload = new FormData();
-      upload.append("image", file);
-      upload.append("language", language);
-      if (context) upload.append("food_context", context);
       const { data: first } = await api<{ data: Analysis }>("/api/v1/meal-analyses", { method: "POST", body: upload });
       createdId = first.id;
       retainedAnalysisIds.current.add(first.id);
@@ -185,8 +182,8 @@ export function CameraPage() {
         if (data.status === "succeeded" && data.draft) {
           setMealTitle(data.draft.title);
           setItems(data.draft.items.map(reviewItem));
-          setAnalysisId(first.id);
-          setAnalysisReady(true);
+          if (isPhoto) { setAnalysisId(first.id); setAnalysisReady(true); }
+          else discardAnalysis(first.id);
           setAnalysisStage("details");
           if (previousId && previousId !== first.id) discardAnalysis(previousId);
           return;
@@ -194,15 +191,20 @@ export function CameraPage() {
         if (data.status === "failed" && data.error_code === "language_mismatch") throw new Error("language_mismatch");
         if (data.status === "failed" || data.status === "canceled") break;
       }
-      throw new Error(text.analysisFailed);
+      throw new Error(isPhoto ? text.analysisFailed : text.estimateFailed);
     } catch (error) {
       if (analysisGeneration.current !== generation) return;
       setAnalysisStage("details");
-      if (error instanceof ApiError && error.errors.food_context) {
+      if (isPhoto && error instanceof ApiError && error.errors.food_context) {
         if (createdId) discardAnalysis(createdId);
         setContextInvalid(true);
         contextDialog.current?.showModal();
         showToast({ en: copy.en.foodContextInvalid, id: copy.id.foodContextInvalid }, "error");
+        return;
+      }
+      if (!isPhoto) {
+        if (createdId) discardAnalysis(createdId);
+        showToast({ en: error instanceof ApiError && error.status !== 503 ? errorText(error) : copy.en.estimateFailed, id: error instanceof ApiError && error.status !== 503 ? errorText(error) : copy.id.estimateFailed }, "error");
         return;
       }
       if (createdId) {
@@ -238,7 +240,41 @@ export function CameraPage() {
     const generation = ++analysisGeneration.current;
     contextDialog.current?.close();
     setAnalysisStage("uploading");
-    void analyzePhoto(selectedPhoto, generation, foodContext.trim(), analysisId).finally(() => {
+    const upload = new FormData();
+    upload.append("image", selectedPhoto);
+    upload.append("language", language);
+    if (foodContext.trim()) upload.append("food_context", foodContext.trim());
+    void analyzeMeal(upload, generation, analysisId, true).finally(() => {
+      if (analysisGeneration.current === generation) analysisInFlight.current = false;
+    });
+  }
+
+  function beginTextAnalysis() {
+    if (mode !== "manual" || analysisStage !== "details" || analysisInFlight.current || photoEnabled === false || busy) return;
+    const form = mealFormRef.current;
+    const name = form?.elements.namedItem("name") as HTMLInputElement | null;
+    const grams = form?.elements.namedItem("item-0-grams") as HTMLInputElement | null;
+    if (!mealTitle.trim()) {
+      name?.setCustomValidity(text.estimateName);
+      if (form) highlightInvalid(form, () => showToast({ en: copy.en.estimateName, id: copy.id.estimateName }, "error"));
+      name?.reportValidity();
+      name?.focus();
+      return;
+    }
+    if (grams && !grams.checkValidity()) {
+      grams.reportValidity();
+      grams.focus();
+      return;
+    }
+    const upload = new FormData();
+    upload.append("name", mealTitle.trim());
+    upload.append("language", language);
+    if (items[0].description.trim()) upload.append("description", items[0].description.trim());
+    if (items[0].grams) upload.append("grams", items[0].grams);
+    analysisInFlight.current = true;
+    const generation = ++analysisGeneration.current;
+    setAnalysisStage("queued");
+    void analyzeMeal(upload, generation, null, false).finally(() => {
       if (analysisGeneration.current === generation) analysisInFlight.current = false;
     });
   }
@@ -388,7 +424,7 @@ export function CameraPage() {
       {mode !== "camera" && (mode !== "review" || readyForReview) && (mode !== "edit" || editMeal) && <motion.section id="meal-review" className="rounded-[1.7rem] border border-line bg-surface p-5 shadow-sm sm:p-8" aria-labelledby="meal-review-title" initial={mode === "review" && !reducedMotion ? { opacity: 0, y: 14 } : false} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }}>
         <h2 id="meal-review-title" className="text-2xl font-extrabold tracking-[-.05em]">{mode === "edit" ? text.editTitle : mode === "review" ? text.nutritionDetails : text.manualTitle}</h2>
         <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">{mode === "edit" ? text.editHint : mode === "review" ? text.photoHint : text.manualHint}</p>
-        <form key={editMeal?.id ?? mode + logDate} className="mt-6" onSubmit={submit} onInvalid={(event) => highlightInvalid(event.currentTarget, () => showToast({ en: copy.en.invalid, id: copy.id.invalid }, "error"))}>
+        <form ref={mealFormRef} key={editMeal?.id ?? mode + logDate} className="mt-6" onSubmit={submit} onInvalid={(event) => highlightInvalid(event.currentTarget, () => showToast({ en: copy.en.invalid, id: copy.id.invalid }, "error"))}>
           <fieldset disabled={analysisStage !== "details"} className={`space-y-6 ${analysisStage === "details" ? "" : "opacity-60"}`}>
           <div className="grid gap-4 sm:grid-cols-3">
             <label className="grid gap-2 text-sm font-bold sm:col-span-3">{text.mealName}<input className={inputClass} name="name" maxLength={80} placeholder={text.mealPlaceholder} value={mealTitle} onChange={(event) => { event.currentTarget.setCustomValidity(""); setMealTitle(event.target.value); }} required /></label>
@@ -399,6 +435,7 @@ export function CameraPage() {
             <h3 className="font-extrabold text-primary">{text.item}{items.length > 1 ? ` ${index + 1}` : ""}</h3>
             {items.length > 1 && <label className="grid gap-2 text-sm font-bold">{text.item}<input className={inputClass} name={`item-${index}-name`} maxLength={160} value={item.name} onChange={(event) => { event.currentTarget.setCustomValidity(""); updateItem(index, { name: event.target.value }); }} required /></label>}
             <div className="grid gap-3 sm:grid-cols-2"><label className="grid gap-2 text-sm font-bold">{text.description}<input className={inputClass} name={`item-${index}-description`} maxLength={200} value={item.description} onChange={(event) => { event.currentTarget.setCustomValidity(""); updateItem(index, { description: event.target.value }); }} required={mode === "review" && Boolean(analysisId)} /></label><label className="grid gap-2 text-sm font-bold">{text.grams}<input className={inputClass} name={`item-${index}-grams`} type="number" min="0.1" max="2000" step="0.1" inputMode="decimal" value={item.grams} onChange={(event) => { event.currentTarget.setCustomValidity(""); changeGrams(index, event.target.value); }} /></label></div>
+            {mode === "manual" && index === 0 && photoEnabled !== false && <div className="rounded-xl border border-primary/25 bg-primary/5 p-4"><p className="text-sm leading-5 text-muted">{text.estimateHint}</p><button className="btn btn-outline mt-3 rounded-xl border-primary/40 bg-surface font-extrabold text-primary" type="button" onClick={beginTextAnalysis}>{text.estimateButton}</button>{analysisStage !== "details" && <div className="mt-3" role="status" aria-live="polite"><p className="text-xs font-bold text-primary">{analysisStage === "processing" ? text.estimateProcessing : text.estimateQueued}</p><progress className="progress progress-primary mt-2 w-full" aria-label={text.estimateProcessing} /></div>}</div>}
             <div><h4 className="text-sm font-extrabold text-primary">{text.required}</h4><div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">{NUTRIENTS.slice(0, 4).map((key) => <label key={key} className="grid gap-2 text-xs font-bold">{nutrientLabels[language][key]} ({nutrientUnits[key]})<input className={inputClass} name={`item-${index}-${key}`} type="number" min={0} max={NUTRIENT_LIMITS[key]} step="0.01" inputMode="decimal" value={item.nutrients[key]} onChange={(event) => { event.currentTarget.setCustomValidity(""); changeNutrient(index, key, event.target.value); }} required /></label>)}</div></div>
             <div><h4 className="text-sm font-extrabold text-primary">{text.optional}</h4><div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-5">{NUTRIENTS.slice(4).map((key) => <label key={key} className="grid gap-2 text-xs font-bold">{nutrientLabels[language][key]} ({nutrientUnits[key]})<input className={inputClass} name={`item-${index}-${key}`} type="number" min={0} max={NUTRIENT_LIMITS[key]} step="0.01" inputMode="decimal" placeholder="—" value={item.nutrients[key]} onChange={(event) => { event.currentTarget.setCustomValidity(""); changeNutrient(index, key, event.target.value); }} /></label>)}</div></div>
           </section>)}

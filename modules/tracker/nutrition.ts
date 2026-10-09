@@ -1,6 +1,9 @@
 export const NUTRIENTS = ["calories", "protein", "carbs", "fat", "fiber", "sodium", "potassium", "calcium", "iron"] as const;
 export type Nutrient = (typeof NUTRIENTS)[number];
 export const MACRO_NUTRIENTS: readonly Nutrient[] = ["calories", "protein", "carbs", "fat"];
+export const GOAL_LOWER_RATIO = 0.9;
+export const GOAL_UPPER_RATIO = 1.05;
+export function isCalorieWarning(total: number | null | undefined, target: number | null | undefined): boolean { return total != null && target != null && total > target && total <= target * GOAL_UPPER_RATIO; }
 export const NUTRIENT_LIMITS: Record<Nutrient, number> = { calories: 6000, protein: 1000, carbs: 1500, fat: 800, fiber: 200, sodium: 20000, potassium: 20000, calcium: 10000, iron: 500 };
 export type NutrientAmounts = Record<Nutrient, number>;
 export type LoggedAmounts = Record<Nutrient, number | null>;
@@ -95,15 +98,12 @@ export function sumNutrition(meals: NutrientLog[]) {
   return { totals, known };
 }
 
-export function nutritionStatus(meals: NutrientLog[], targets: NutrientAmounts | null): "empty" | "noTarget" | "partial" | "progress" | "complete" {
+export function nutritionStatus(meals: NutrientLog[], targets: NutrientAmounts | null): "empty" | "noTarget" | "partial" | "progress" | "complete" | "over" {
   if (!meals.length) return "empty";
   if (!targets) return "noTarget";
   const { totals, known } = sumNutrition(meals);
+  if (NUTRIENTS.some((key) => known[key] && (key === "sodium" ? totals[key] > targets[key] : MACRO_NUTRIENTS.includes(key) && targets[key] > 0 && totals[key] > targets[key] * GOAL_UPPER_RATIO))) return "over";
   if (NUTRIENTS.some((key) => !known[key])) return "partial";
-  const complete = NUTRIENTS.every((key) => key === "sodium"
-    ? totals[key] <= targets[key]
-    : key === "calories"
-      ? totals[key] >= targets[key] * 0.9 && totals[key] <= targets[key] * 1.1
-      : totals[key] >= targets[key] * 0.9);
+  const complete = NUTRIENTS.every((key) => key === "sodium" || totals[key] >= targets[key] * GOAL_LOWER_RATIO);
   return complete ? "complete" : "progress";
 }

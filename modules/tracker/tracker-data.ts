@@ -12,9 +12,9 @@ export interface Profile {
 export interface WeightEntry { id: number; date: string; kg: number }
 export interface MealItem { food_id: number | null; name: string; description?: string | null; grams: number | null; nutrients: LoggedAmounts }
 export interface MealEntry { id: string; date: string; time: string; name: string; thumbnailUrl: string | null; nutrients: LoggedAmounts; items: MealItem[] }
-export interface NutritionSummary { totals: LoggedAmounts; known: Record<Nutrient, boolean>; remaining: LoggedAmounts; status: "empty" | "no_target" | "partial" | "progress" | "complete" }
+export interface NutritionSummary { totals: LoggedAmounts; known: Record<Nutrient, boolean>; remaining: LoggedAmounts; status: "empty" | "no_target" | "partial" | "progress" | "complete" | "over" }
 export interface DaySummary { date: string; target: NutrientAmounts | null; nutrition: NutritionSummary; weight: WeightEntry | null; meals: MealEntry[] }
-export interface CalendarSummary { month: string; days: { date: string; status: NutritionSummary["status"]; meal_count: number; calories: number | null; weight_kg: number | null }[]; completed_days: number; logged_days: number; weigh_ins: number; weight_change_kg: number | null }
+export interface CalendarSummary { month: string; days: { date: string; status: NutritionSummary["status"]; has_target: boolean; meal_count: number; calories: number | null; calorie_warning: boolean; weight_kg: number | null }[]; completed_days: number; logged_days: number; weigh_ins: number; weight_change_kg: number | null }
 export interface ApiUser { id: number; name: string; phone_e164: string | null; email: string | null; avatar_url: string | null; has_password: boolean }
 export interface TrackerData { profile: Profile; weights: WeightEntry[]; meals: MealEntry[]; days: Record<string, DaySummary>; user: ApiUser | null; status: "idle" | "loading" | "ready" | "error" | "unauthorized" }
 
@@ -40,6 +40,11 @@ export function ageFromBirthDate(value: string, today = localDateKey()): number 
   return age >= 0 && age <= 120 ? age : null;
 }
 export function useTodayKey() { return useSyncExternalStore(subscribeToday, () => localDateKey(), () => ""); }
+export function calendarDisplayStatus(raw: NutritionSummary["status"], date: string, today: string, hasTarget: boolean): "empty" | "noTarget" | "progress" | "missed" | "complete" | "over" {
+  if (raw === "no_target") return "noTarget";
+  if (date < today && (raw === "progress" || raw === "partial" || (raw === "empty" && hasTarget))) return "missed";
+  return raw === "partial" ? "progress" : raw;
+}
 function subscribe(listener: () => void) { listeners.add(listener); return () => { listeners.delete(listener); }; }
 function publish(next: TrackerData) { snapshot = next; listeners.forEach((listener) => listener()); }
 export function useTrackerData() { return useSyncExternalStore(subscribe, () => snapshot, () => empty); }
@@ -108,6 +113,21 @@ export async function refreshWeights(): Promise<void> {
   const requestGeneration = generation;
   const { data } = await api<{ data: ApiWeight[] }>("/api/v1/me/weights?from=1900-01-01");
   if (requestGeneration === generation) publish({ ...snapshot, weights: data.map((weight) => ({ id: weight.id, date: weight.entry_date, kg: weight.kg })).sort((a, b) => a.date.localeCompare(b.date)) });
+}
+export async function loadWeightMonth(month: string): Promise<{ entries: WeightEntry[]; previous: WeightEntry | null }> {
+  const [year, monthNumber] = month.split("-").map(Number);
+  const first = `${month}-01`;
+  const last = new Date(Date.UTC(year, monthNumber, 0)).toISOString().slice(0, 10);
+  const before = new Date(Date.UTC(year, monthNumber - 1, 0)).toISOString().slice(0, 10);
+  const [page, prior] = await Promise.all([
+    api<{ data: ApiWeight[]; meta: { last_page: number } }>(`/api/v1/me/weights?from=${first}&to=${last}`),
+    api<{ data: ApiWeight[] }>(`/api/v1/me/weights?to=${before}`),
+  ]);
+  // ponytail: One check-in per day means two 30-entry pages cover any month; paginate further if that rule changes.
+  const next = page.meta.last_page > 1 ? await api<{ data: ApiWeight[] }>(`/api/v1/me/weights?from=${first}&to=${last}&page=2`) : null;
+  const entries = [...page.data, ...(next?.data ?? [])].map((weight) => ({ id: weight.id, date: weight.entry_date, kg: weight.kg })).sort((a, b) => a.date.localeCompare(b.date));
+  const previous = prior.data[0];
+  return { entries, previous: previous ? { id: previous.id, date: previous.entry_date, kg: previous.kg } : null };
 }
 export async function loadCalendar(month: string): Promise<CalendarSummary> {
   const { data } = await api<{ data: CalendarSummary }>(`/api/v1/calendar?month=${encodeURIComponent(month)}`);
