@@ -1,4 +1,4 @@
-export const API_ORIGIN = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+export const API_ORIGIN = process.env.NEXT_PUBLIC_API_URL ? new URL(process.env.NEXT_PUBLIC_API_URL).origin : process.env.NODE_ENV === "production" ? "" : "http://localhost:8000";
 
 export class ApiError extends Error {
   status: number;
@@ -18,6 +18,7 @@ function xsrfToken(): string {
 }
 
 export async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
+  if (!API_ORIGIN) throw new ApiError(503, "Nourish API is not configured.");
   const method = options.method?.toUpperCase() ?? "GET";
   if (method !== "GET" && method !== "HEAD") {
     const csrf = await fetch(`${API_ORIGIN}/sanctum/csrf-cookie`, { credentials: "include" });

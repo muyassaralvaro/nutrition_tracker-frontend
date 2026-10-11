@@ -43,7 +43,7 @@ const copy = {
     editTitle: "Edit your meal", editHint: "Adjust the logged time and nutrition values whenever needed.", missing: "Meal not found.", loadingMeal: "Loading meal…", backHome: "Back to home",
     mealName: "Food or meal name", mealPlaceholder: "e.g. rice and chicken", date: "Date", time: "Meal time", required: "Energy and macros", optional: "Fiber and minerals",
     save: "Save meal", update: "Update meal", saved: "Meal saved in nutrition log.", updated: "Meal updated.", invalid: "Check highlighted fields.", item: "Dish", description: "Short dish description", grams: "Estimated portion (g, optional)",
-    dailyQuota: "New AI meal analyses remaining", regenQuota: "Regenerations left for this meal", unlimited: "Unlimited", dailyExhausted: "Your 7 AI analyses are used. Enter nutrition manually or try again after the reset.", regenExhausted: "This meal has used both AI regenerations. Edit the estimate manually.", differentMeal: "Use the same photo or food name when regenerating.", reanalyzeText: "Reanalyze this meal",
+    dailyQuota: "New AI meal analyses remaining", regenQuota: "Regenerations left for this meal", unlimited: "Unlimited", dailyExhausted: "Your 7 AI analyses are used. Enter nutrition manually or try again after the reset.", regenExhausted: "This meal has used both AI regenerations. Edit the estimate manually.", differentMeal: "Use the same photo or food name when regenerating.", reanalyzeText: "Reanalyze this meal", quotaError: "Could not load analysis allowance.", retryQuota: "Try again",
   },
   id: {
     eyebrow: "KAMERA MAKANAN", title: "Kenali isi piringmu.", intro: "Kamera langsung terbuka. Ambil foto makanan, ganti kamera, atau unggah foto.",
@@ -56,7 +56,7 @@ const copy = {
     editTitle: "Ubah makanan", editHint: "Ubah waktu dan nilai gizi makanan kapan saja.", missing: "Makanan tidak ditemukan.", loadingMeal: "Memuat makanan…", backHome: "Kembali ke beranda",
     mealName: "Nama makanan", mealPlaceholder: "cont. nasi dan ayam", date: "Tanggal", time: "Waktu makan", required: "Energi dan makro", optional: "Serat dan mineral",
     save: "Simpan makanan", update: "Perbarui makanan", saved: "Makanan ditambah ke catatan gizi.", updated: "Makanan diperbarui.", invalid: "Periksa kolom yang ditandai.", item: "Hidangan", description: "Deskripsi singkat hidangan", grams: "Perkiraan porsi (g, opsional)",
-    dailyQuota: "Sisa analisis AI", regenQuota: "Sisa analisis ulang makanan ini", unlimited: "Tanpa batas", dailyExhausted: "Jatah 7 analisis AI habis. Isi gizi manual atau coba lagi setelah jatah diperbarui.", regenExhausted: "Dua analisis ulang makanan ini sudah dipakai. Perbaiki perkiraan secara manual.", differentMeal: "Gunakan foto atau nama makanan yang sama saat menganalisis ulang.", reanalyzeText: "Analisis ulang makanan ini",
+    dailyQuota: "Sisa analisis AI", regenQuota: "Sisa analisis ulang makanan ini", unlimited: "Tanpa batas", dailyExhausted: "Jatah 7 analisis AI habis. Isi gizi manual atau coba lagi setelah jatah diperbarui.", regenExhausted: "Dua analisis ulang makanan ini sudah dipakai. Perbaiki perkiraan secara manual.", differentMeal: "Gunakan foto atau nama makanan yang sama saat menganalisis ulang.", reanalyzeText: "Analisis ulang makanan ini", quotaError: "Jatah analisis gagal dimuat.", retryQuota: "Coba lagi",
   },
 } as const;
 
@@ -88,6 +88,7 @@ export function CameraPage() {
   const [photoEnabled, setPhotoEnabled] = useState<boolean | null>(null);
   const [analysisId, setAnalysisId] = useState<string | null>(null);
   const [quota, setQuota] = useState<AnalysisQuota | null>(null);
+  const [quotaLoadError, setQuotaLoadError] = useState(false);
   const [clockMs, setClockMs] = useState(() => Date.now());
   const [mealTitle, setMealTitle] = useState("");
   const [items, setItems] = useState<ReviewItem[]>([blankItem()]);
@@ -144,7 +145,7 @@ export function CameraPage() {
   useEffect(() => () => { if (preview) URL.revokeObjectURL(preview); }, [preview]);
   useEffect(() => {
     api<{ data: { photo_analysis_enabled: boolean } }>("/api/v1/auth/options").then(({ data }) => setPhotoEnabled(data.photo_analysis_enabled)).catch(() => {});
-    void loadAnalysisQuota().then(setQuota).catch(() => {});
+    void loadAnalysisQuota().then((next) => { setQuota(next); setQuotaLoadError(false); }).catch(() => setQuotaLoadError(true));
   }, []);
   useEffect(() => {
     if (!quota?.resets_at) return;
@@ -153,7 +154,7 @@ export function CameraPage() {
     const tick = () => {
       const now = Date.now();
       setClockMs(now);
-      if (now >= resetMs) void loadAnalysisQuota(analysisId ?? undefined).then(setQuota).catch(() => {});
+      if (now >= resetMs) void loadAnalysisQuota(analysisId ?? undefined).then((next) => { setQuota(next); setQuotaLoadError(false); }).catch(() => setQuotaLoadError(true));
     };
     const interval = window.setInterval(tick, 60_000);
     const resetTimer = window.setTimeout(tick, Math.max(0, resetMs - Date.now()) + 500);
@@ -185,7 +186,7 @@ export function CameraPage() {
     manualAnalysisName.current = null;
   }
   function refreshQuota(id?: string | null) {
-    void loadAnalysisQuota(id ?? undefined).then(setQuota).catch(() => {});
+    void loadAnalysisQuota(id ?? undefined).then((next) => { setQuota(next); setQuotaLoadError(false); }).catch(() => setQuotaLoadError(true));
   }
   function quotaError(error: unknown): { en: string; id: string } | null {
     if (!(error instanceof ApiError)) return null;
@@ -418,7 +419,7 @@ export function CameraPage() {
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/50 via-transparent to-black/70" aria-hidden="true" />
         <div className="pointer-events-none absolute inset-x-8 top-[22%] bottom-[31%] rounded-[2rem] border border-white/25 sm:inset-x-[25%]" aria-hidden="true" />
         <div className="absolute top-[max(1rem,env(safe-area-inset-top))] right-4 left-4 mx-auto flex max-w-5xl items-start justify-between gap-4 sm:right-8 sm:left-8">
-          <div><p className="text-[.65rem] font-extrabold tracking-[.18em] text-brand-lemon">{text.eyebrow}</p><h1 className="mt-1 text-xl font-extrabold tracking-[-.04em] sm:text-2xl">{text.camera}</h1>{quota && <p className="mt-1 text-xs font-bold text-white/85">{text.dailyQuota}: {dailyAllowance}</p>}</div>
+          <div><p className="text-[.65rem] font-extrabold tracking-[.18em] text-brand-lemon">{text.eyebrow}</p><h1 className="mt-1 text-xl font-extrabold tracking-[-.04em] sm:text-2xl">{text.camera}</h1>{quotaLoadError ? <p className="mt-1 text-xs font-bold text-white/85" role="alert">{text.quotaError} <button className="underline underline-offset-2" type="button" onClick={() => { setQuotaLoadError(false); refreshQuota(analysisId); }}>{text.retryQuota}</button></p> : quota && <p className="mt-1 text-xs font-bold text-white/85">{text.dailyQuota}: {dailyAllowance}</p>}</div>
           <button className="grid size-12 shrink-0 place-items-center rounded-full border border-white/30 bg-black/45 text-white shadow-lg backdrop-blur-sm transition-colors hover:bg-black/65" type="button" aria-label={text.switch} title={text.switch} onClick={switchCamera}><svg className="size-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 8V5h5m13 11v3h-5M4.5 15a8 8 0 0 0 13 3M19.5 9a8 8 0 0 0-13-3" /><path d="M8 12h8m-6-2v4m4-4v4" /></svg></button>
         </div>
         {cameraState !== "ready" && <div className="absolute inset-x-6 top-1/2 mx-auto max-w-sm -translate-y-1/2 rounded-2xl bg-black/50 p-5 text-center text-sm font-bold leading-6 backdrop-blur-sm" role="status">{text[cameraState]}</div>}
@@ -432,6 +433,8 @@ export function CameraPage() {
           </div>
         </div>
       </section>}
+
+      {mode !== "camera" && quotaLoadError && <div role="alert" className="flex flex-wrap items-center gap-3 rounded-xl border border-line bg-surface p-4 text-sm text-muted"><span>{text.quotaError}</span><button className="btn btn-outline btn-sm rounded-xl" type="button" onClick={() => { setQuotaLoadError(false); refreshQuota(analysisId); }}>{text.retryQuota}</button></div>}
 
       {mode === "review" && <section className="relative h-[min(42svh,24rem)] min-h-52 overflow-hidden rounded-[1.8rem] border border-line bg-[#071b29] shadow-sm" aria-label={text.photoAlt}>
         {preview && <Image src={preview} alt={text.photoAlt} fill unoptimized className="object-contain" />}

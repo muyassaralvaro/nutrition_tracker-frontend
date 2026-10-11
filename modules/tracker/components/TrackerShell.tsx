@@ -8,7 +8,7 @@ import { Brand } from "@/shared/components/brand/Brand";
 import { LanguageToggle } from "@/shared/components/language-toggle/LanguageToggle";
 import { ThemeToggle } from "@/shared/components/theme-toggle/ThemeToggle";
 import { useLanguage } from "@/shared/language";
-import { clearTrackerData, initializeTracker, localDateKey, refreshDay, useTrackerData } from "../tracker-data";
+import { clearTrackerData, initializeTracker, refreshDay, useTodayKey, useTrackerData } from "../tracker-data";
 
 type IconName = "home" | "calendar" | "camera" | "profile" | "settings";
 
@@ -41,6 +41,7 @@ export function TrackerShell({ children }: { children: ReactNode }) {
   const language = useLanguage();
   const reducedMotion = useReducedMotion();
   const router = useRouter();
+  const today = useTodayKey();
   const { status, days } = useTrackerData();
 
   useEffect(() => { void initializeTracker().catch(() => {}); }, []);
@@ -50,7 +51,7 @@ export function TrackerShell({ children }: { children: ReactNode }) {
     window.addEventListener("nourish:unauthorized", expired);
     return () => window.removeEventListener("nourish:unauthorized", expired);
   }, [router]);
-  useEffect(() => { const today = localDateKey(); if (status === "ready" && !days[today]) void refreshDay(today).catch(() => {}); }, [status, days, pathname]);
+  useEffect(() => { if (status === "ready" && today && !days[today]) void refreshDay(today).catch(() => {}); }, [status, days, today, pathname]);
 
   if (status !== "ready") return <div className="grid min-h-svh place-items-center bg-canvas px-6 text-center text-ink" role="status">
     {status === "error" ? <div><p className="font-bold">{language === "id" ? "Server tidak dapat dijangkau." : "Could not reach the server."}</p><button className="btn btn-primary mt-4 rounded-xl" type="button" onClick={() => void initializeTracker(true).catch(() => {})}>{language === "id" ? "Coba lagi" : "Retry"}</button></div> : <span className="loading loading-spinner loading-lg text-primary" aria-label={language === "id" ? "Memuat data" : "Loading data"} />}
