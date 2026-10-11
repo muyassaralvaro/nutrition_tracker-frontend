@@ -33,6 +33,7 @@ export interface PlanInputs {
   weightKg: number | null;
   sex: FormulaSex;
   goal: Goal;
+  goalWeightKg?: number | null;
   build: BodyBuild;
   activityMinutes: number | null;
   activityType: ActivityType;
@@ -57,15 +58,19 @@ export function leanMassWeightRange(weightKg: number, bodyFatPercent: number, se
 }
 
 export function estimateTargets(input: PlanInputs): NutrientAmounts | null {
-  const { age, heightCm, weightKg, sex, goal, build, activityMinutes, activityType } = input;
+  const { age, heightCm, weightKg, sex, goal, goalWeightKg = null, build, activityMinutes, activityType } = input;
   if (age === null || age < 18 || age > 120 || heightCm === null || heightCm < 80 || heightCm > 250 || weightKg === null || weightKg < 20 || weightKg > 500 || !sex || !goal || !build || activityMinutes === null || activityMinutes < 0 || activityMinutes > 240 || !activityType) return null;
+  if (goalWeightKg !== null && (!Number.isFinite(goalWeightKg) || goalWeightKg < 20 || goalWeightKg > 500 || goal === "lose" && goalWeightKg >= weightKg || goal === "gain" && goalWeightKg <= weightKg)) return null;
 
   // ponytail: Activity bands are editable estimates; revise with validated nutrition guidance when needed.
   const intensity = { daily: 0.5, cardio: 1.2, strength: 1, mixed: 1 }[activityType];
   const activeMinutes = activityMinutes * intensity;
   const multiplier = activeMinutes < 20 ? 1.2 : activeMinutes < 45 ? 1.375 : activeMinutes < 90 ? 1.55 : 1.725;
   const bmr = 10 * weightKg + 6.25 * heightCm - 5 * age + (sex === "male" ? 5 : -161);
-  const calories = Math.round(Math.max(1200, Math.min(4500, bmr * multiplier + (goal === "lose" ? -250 : goal === "gain" ? 250 : 0))) / 10) * 10;
+  // ponytail: Goal distance adjusts the starting deficit, capped at 500 kcal/day; add a target date for pace-based planning.
+  const lossGap = goal === "lose" && goalWeightKg !== null ? weightKg - goalWeightKg : 0;
+  const delta = goal === "lose" ? -Math.min(500, 250 + lossGap * 10 * multiplier) : goal === "gain" ? 250 : 0;
+  const calories = Math.round(Math.max(1200, Math.min(4500, bmr * multiplier + delta)) / 10) * 10;
   const trainingProtein = activityMinutes === 0 ? 0 : activityType === "strength" || activityType === "mixed" ? 0.3 : activityType === "cardio" ? 0.1 : 0;
   const proteinFactor = Math.min(2, 1.2 + trainingProtein + (build === "muscular" ? 0.2 : 0) + (goal === "lose" ? 0.2 : 0));
   const protein = Math.round(Math.min(weightKg * proteinFactor, calories * 0.35 / 4));
