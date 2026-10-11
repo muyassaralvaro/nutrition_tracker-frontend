@@ -2,13 +2,14 @@
 
 import { useCallback, useEffect, useState, type MouseEvent } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { motion, useReducedMotion } from "motion/react";
 import { Brand } from "@/shared/components/brand/Brand";
 import { LanguageToggle } from "@/shared/components/language-toggle/LanguageToggle";
 import { ThemeToggle } from "@/shared/components/theme-toggle/ThemeToggle";
 import { useLanguage } from "@/shared/language";
 import { useToast } from "@/shared/components/toast/ToastProvider";
-import { api, API_ORIGIN } from "@/shared/api-client";
+import { api, ApiError, API_ORIGIN } from "@/shared/api-client";
 import { styles } from "./access.styles";
 
 const copy = {
@@ -19,7 +20,7 @@ const copy = {
     welcome: "WELCOME TO NOURISH", title: "Welcome", accent: "in.", description: "Track meals, check your nutrition, and see your progress. Sign in or create an account with Google.",
     google: "Continue with Google", agreement: "I have read and agree to the", and: "and", terms: "Terms of Service", privacy: "Privacy Policy",
     consentRequired: "Agree to the Terms of Service and Privacy Policy to continue.", googlePending: "Google sign-in is unavailable right now.", googleChecking: "Checking Google sign-in…", retry: "Try again",
-    serverUnavailable: "Could not reach Nourish server.", oauthFailed: "Google sign-in failed. Try again.",
+    serverUnavailable: "Could not reach Nourish server.", checkingSession: "Checking your session…", oauthFailed: "Google sign-in failed. Try again.",
     signupLimited: "Too many new accounts from this network. Try again tomorrow or contact support@nourish.my.id.",
     accountExists: "This email belongs to an older account. Contact support@nourish.my.id to link Google safely.",
   },
@@ -30,7 +31,7 @@ const copy = {
     welcome: "SELAMAT DATANG DI NOURISH", title: "Selamat", accent: "datang.", description: "Catat makanan, periksa gizi, dan lihat kemajuanmu. Masuk atau buat akun lewat Google.",
     google: "Lanjut dengan Google", agreement: "Saya telah membaca dan menyetujui", and: "dan", terms: "Syarat Layanan", privacy: "Kebijakan Privasi",
     consentRequired: "Setujui Syarat Layanan dan Kebijakan Privasi untuk melanjutkan.", googlePending: "Login Google belum tersedia saat ini.", googleChecking: "Memeriksa login Google…", retry: "Coba lagi",
-    serverUnavailable: "Server Nourish tidak dapat dihubungi.", oauthFailed: "Login Google gagal. Coba lagi.",
+    serverUnavailable: "Server Nourish tidak dapat dihubungi.", checkingSession: "Memeriksa sesi…", oauthFailed: "Login Google gagal. Coba lagi.",
     signupLimited: "Terlalu banyak akun baru dari jaringan ini. Coba lagi besok atau hubungi support@nourish.my.id.",
     accountExists: "Email ini milik akun lama. Hubungi support@nourish.my.id untuk menautkan Google dengan aman.",
   },
@@ -46,6 +47,7 @@ function GoogleMark() {
 }
 
 export function AccessPage() {
+  const router = useRouter();
   const language = useLanguage();
   const text = copy[language];
   const showToast = useToast();
@@ -55,6 +57,8 @@ export function AccessPage() {
   const [checkingOptions, setCheckingOptions] = useState(true);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [legalError, setLegalError] = useState(false);
+  const [sessionStatus, setSessionStatus] = useState<"checking" | "guest" | "error">("checking");
+  const [sessionAttempt, setSessionAttempt] = useState(0);
 
   const checkOptions = useCallback(() => {
     void api<{ data: { google_enabled: boolean } }>("/api/v1/auth/options")
@@ -64,13 +68,22 @@ export function AccessPage() {
   }, []);
 
   useEffect(() => {
+    const controller = new AbortController();
+    void api("/api/v1/me", { signal: controller.signal })
+      .then(() => { if (!controller.signal.aborted) router.replace("/home"); })
+      .catch((error) => { if (!controller.signal.aborted) setSessionStatus(error instanceof ApiError && error.status === 401 ? "guest" : "error"); });
+    return () => controller.abort();
+  }, [router, sessionAttempt]);
+
+  useEffect(() => {
+    if (sessionStatus !== "guest") return;
     void checkOptions();
     const oauth = new URLSearchParams(window.location.search).get("oauth");
     if (oauth) {
       const message = oauth === "consent_required" ? "consentRequired" : oauth === "signup_limited" ? "signupLimited" : oauth === "account_exists" ? "accountExists" : "oauthFailed";
       showToast({ en: copy.en[message], id: copy.id[message] }, "error");
     }
-  }, [checkOptions, showToast]);
+  }, [checkOptions, sessionStatus, showToast]);
 
   function checkConsent(event: MouseEvent<HTMLAnchorElement>) {
     if (!googleEnabled) {
@@ -85,6 +98,10 @@ export function AccessPage() {
       document.getElementById("legal-consent")?.focus();
     }
   }
+
+  if (sessionStatus !== "guest") return <main className="grid h-dvh place-items-center bg-canvas px-6 text-center text-ink" role="status">
+    {sessionStatus === "error" ? <div><p className="font-bold">{text.serverUnavailable}</p><button className="btn btn-primary mt-4 rounded-xl" type="button" onClick={() => { setSessionStatus("checking"); setSessionAttempt((attempt) => attempt + 1); }}>{text.retry}</button></div> : <span className="loading loading-spinner loading-lg text-primary" aria-label={text.checkingSession} />}
+  </main>;
 
   return <main className={`${styles.shell} h-dvh !min-h-0`}>
     <aside className={`${styles.promo} h-dvh !min-h-0`} aria-label={text.about}>
