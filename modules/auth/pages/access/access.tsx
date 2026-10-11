@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type MouseEvent } from "react";
+import { useCallback, useEffect, useState, type MouseEvent } from "react";
 import Link from "next/link";
 import { motion, useReducedMotion } from "motion/react";
 import { Brand } from "@/shared/components/brand/Brand";
@@ -14,23 +14,23 @@ import { styles } from "./access.styles";
 const copy = {
   en: {
     brandLabel: "Nourish home", about: "About Nourish", promoEyebrow: "A FRESH TAKE ON FEELING GOOD",
-    promoTitle: "Good habits grow", promoAccent: "one day at a time.", promoDescription: "Know your meals. Move your way. See the progress that matters to you.",
-    balance: "TODAY'S BALANCE", dailyGoal: "of daily goal", onTrack: "Feeling on track", everyStep: "Every step counts", promoFooter: "NOURISH YOUR EVERYDAY",
+    promoTitle: "Good habits grow", promoAccent: "one day at a time.", promoDescription: "Know your meals. Track your weight. See the progress that matters to you.",
+    balance: "TODAY'S BALANCE", dailyGoal: "of daily goal", onTrack: "Feeling on track", everyStep: "Every meal counts", promoFooter: "NOURISH YOUR EVERYDAY",
     welcome: "WELCOME TO NOURISH", title: "Welcome", accent: "in.", description: "Track meals, check your nutrition, and see your progress. Sign in or create an account with Google.",
     google: "Continue with Google", agreement: "I have read and agree to the", and: "and", terms: "Terms of Service", privacy: "Privacy Policy",
-    consentRequired: "Agree to the Terms of Service and Privacy Policy to continue.", googlePending: "Google sign-in is unavailable right now.",
-    serverUnavailable: "Could not reach Nourish server. Refresh to try again.", oauthFailed: "Google sign-in failed. Try again.",
+    consentRequired: "Agree to the Terms of Service and Privacy Policy to continue.", googlePending: "Google sign-in is unavailable right now.", googleChecking: "Checking Google sign-in…", retry: "Try again",
+    serverUnavailable: "Could not reach Nourish server.", oauthFailed: "Google sign-in failed. Try again.",
     signupLimited: "Too many new accounts from this network. Try again tomorrow or contact support@nourish.my.id.",
     accountExists: "This email belongs to an older account. Contact support@nourish.my.id to link Google safely.",
   },
   id: {
     brandLabel: "Beranda Nourish", about: "Tentang Nourish", promoEyebrow: "CARA BARU UNTUK MERASA LEBIH BAIK",
-    promoTitle: "Bangun kebiasaan", promoAccent: "baik tiap hari.", promoDescription: "Kenali makananmu, bergerak dengan caramu, dan lihat kemajuannya.",
-    balance: "KESEIMBANGAN HARI INI", dailyGoal: "dari target harian", onTrack: "Tetap sesuai jalur", everyStep: "Setiap langkah berarti", promoFooter: "RAWAT DIRIMU SETIAP HARI",
+    promoTitle: "Bangun kebiasaan", promoAccent: "baik tiap hari.", promoDescription: "Kenali makananmu, catat berat badanmu, dan lihat kemajuannya.",
+    balance: "KESEIMBANGAN HARI INI", dailyGoal: "dari target harian", onTrack: "Tetap sesuai jalur", everyStep: "Setiap makanan berarti", promoFooter: "RAWAT DIRIMU SETIAP HARI",
     welcome: "SELAMAT DATANG DI NOURISH", title: "Selamat", accent: "datang.", description: "Catat makanan, periksa gizi, dan lihat kemajuanmu. Masuk atau buat akun lewat Google.",
     google: "Lanjut dengan Google", agreement: "Saya telah membaca dan menyetujui", and: "dan", terms: "Syarat Layanan", privacy: "Kebijakan Privasi",
-    consentRequired: "Setujui Syarat Layanan dan Kebijakan Privasi untuk melanjutkan.", googlePending: "Login Google belum tersedia saat ini.",
-    serverUnavailable: "Server Nourish tidak dapat dihubungi. Muat ulang untuk mencoba lagi.", oauthFailed: "Login Google gagal. Coba lagi.",
+    consentRequired: "Setujui Syarat Layanan dan Kebijakan Privasi untuk melanjutkan.", googlePending: "Login Google belum tersedia saat ini.", googleChecking: "Memeriksa login Google…", retry: "Coba lagi",
+    serverUnavailable: "Server Nourish tidak dapat dihubungi.", oauthFailed: "Login Google gagal. Coba lagi.",
     signupLimited: "Terlalu banyak akun baru dari jaringan ini. Coba lagi besok atau hubungi support@nourish.my.id.",
     accountExists: "Email ini milik akun lama. Hubungi support@nourish.my.id untuk menautkan Google dengan aman.",
   },
@@ -52,24 +52,30 @@ export function AccessPage() {
   const reducedMotion = useReducedMotion();
   const [googleEnabled, setGoogleEnabled] = useState(false);
   const [optionsError, setOptionsError] = useState(false);
+  const [checkingOptions, setCheckingOptions] = useState(true);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [legalError, setLegalError] = useState(false);
 
-  useEffect(() => {
-    api<{ data: { google_enabled: boolean } }>("/api/v1/auth/options")
+  const checkOptions = useCallback(() => {
+    void api<{ data: { google_enabled: boolean } }>("/api/v1/auth/options")
       .then(({ data }) => setGoogleEnabled(data.google_enabled))
-      .catch(() => setOptionsError(true));
+      .catch(() => { setGoogleEnabled(false); setOptionsError(true); })
+      .finally(() => setCheckingOptions(false));
+  }, []);
+
+  useEffect(() => {
+    void checkOptions();
     const oauth = new URLSearchParams(window.location.search).get("oauth");
     if (oauth) {
       const message = oauth === "consent_required" ? "consentRequired" : oauth === "signup_limited" ? "signupLimited" : oauth === "account_exists" ? "accountExists" : "oauthFailed";
       showToast({ en: copy.en[message], id: copy.id[message] }, "error");
     }
-  }, [showToast]);
+  }, [checkOptions, showToast]);
 
   function checkConsent(event: MouseEvent<HTMLAnchorElement>) {
     if (!googleEnabled) {
       event.preventDefault();
-      showToast({ en: copy.en.googlePending, id: copy.id.googlePending }, "error");
+      showToast(optionsError ? { en: copy.en.serverUnavailable, id: copy.id.serverUnavailable } : checkingOptions ? { en: copy.en.googleChecking, id: copy.id.googleChecking } : { en: copy.en.googlePending, id: copy.id.googlePending }, checkingOptions ? "info" : "error");
       return;
     }
     if (!acceptedTerms) {
@@ -102,11 +108,11 @@ export function AccessPage() {
           <input className="checkbox checkbox-primary mt-1 shrink-0" id="legal-consent" type="checkbox" checked={acceptedTerms} aria-invalid={legalError} aria-describedby="legal-consent-text" onChange={(event) => { setAcceptedTerms(event.target.checked); setLegalError(false); }} />
           <p id="legal-consent-text" className="text-muted"><label className="cursor-pointer" htmlFor="legal-consent">{text.agreement}</label> <Link className={styles.switchLink} href="/terms" target="_blank" rel="noopener noreferrer">{text.terms}</Link> {text.and} <Link className={styles.switchLink} href="/privacy" target="_blank" rel="noopener noreferrer">{text.privacy}</Link>.</p>
         </div>
-        {optionsError && <p role="alert" className="mb-3 text-center text-sm text-error">{text.serverUnavailable}</p>}
-        <a className={`${styles.googleButton} ${styles.loginGoogle} ${!googleEnabled ? "opacity-50" : ""}`} href={`${API_ORIGIN}/api/v1/auth/google/redirect?consent=1`} onClick={checkConsent} aria-disabled={!googleEnabled} title={!googleEnabled && !optionsError ? text.googlePending : undefined}>
+        {optionsError && <div role="alert" className="mb-3 flex flex-wrap items-center justify-center gap-x-2 text-center text-sm text-error"><span>{text.serverUnavailable}</span><button className="min-h-11 font-bold underline underline-offset-4" type="button" onClick={() => { setCheckingOptions(true); setOptionsError(false); void checkOptions(); }}>{text.retry}</button></div>}
+        <a className={`${styles.googleButton} ${styles.loginGoogle} ${!googleEnabled ? "opacity-50" : ""}`} href={`${API_ORIGIN}/api/v1/auth/google/redirect?consent=1`} onClick={checkConsent} aria-disabled={!googleEnabled} title={!googleEnabled && !optionsError ? checkingOptions ? text.googleChecking : text.googlePending : undefined}>
           <span className="mr-2 size-5"><GoogleMark /></span> {text.google}
         </a>
-        {!googleEnabled && !optionsError && <p className="mt-2 text-center text-xs text-muted">{text.googlePending}</p>}
+        {!googleEnabled && !optionsError && <p className="mt-2 text-center text-xs text-muted" role="status">{checkingOptions ? text.googleChecking : text.googlePending}</p>}
       </motion.section>
     </div>
   </main>;

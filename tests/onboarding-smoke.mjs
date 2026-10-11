@@ -13,6 +13,8 @@ assert.equal(new URL(returning.headers.get("location"), origin).pathname, "/logi
 
 const login = await fetch(new URL("/login", origin));
 assert.equal(login.status, 200);
+assert.match(login.headers.get("content-security-policy") ?? "", /frame-ancestors 'none'/);
+assert.equal(login.headers.get("x-content-type-options"), "nosniff");
 const html = await login.text();
 assert.match(html, /Continue with Google/);
 assert.match(html, /Terms of Service/);

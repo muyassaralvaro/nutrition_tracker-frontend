@@ -20,14 +20,14 @@ const copy = {
     basics: "Your details", age: "Age", height: "Height", weight: "Current weight", bodyFat: "Body fat", noData: "Not set", years: "years", cm: "cm", kg: "kg",
     direction: "Your direction", goal: "Goal", goalWeight: "Goal weight", build: "Body shape", activity: "Daily activity", minutes: "min/day", goals: { lose: "Lose weight", maintain: "Maintain weight", gain: "Gain weight" }, builds: { lean: "Lean", soft: "Lean, softer middle", stocky: "Broad build", muscular: "Muscular" }, activities: { daily: "Everyday movement", cardio: "Cardio", strength: "Strength", mixed: "Mixed" },
     targets: "Your daily targets", targetHint: "Editable values. Calories and macros count within 90–105%; fiber and minerals need at least 90%. Sodium is an upper limit.", targetRange: "Goal range", targetMinimum: "Minimum", targetLimit: "Upper limit", history: "Weight history", historyHint: "Daily view by month", historyTrend: "Daily weight", firstCheckIn: "First check-in", lastCheckIn: "Last check-in", sinceLast: "Since last check-in", checkIns: "check-ins", emptyHistory: "No weight recorded by this month.", goalProgress: "Goal progress", toGoal: "to goal", goalLine: "Goal weight", previousMonth: "Previous month", nextMonth: "Next month", carriedWeight: "Last recorded weight", carryHint: "Days without a check-in use your last recorded weight.", loadingHistory: "Loading weight history…", historyError: "Could not load weight history.", retryHistory: "Try again", privacy: "Profile, weight, and photo are saved to your account. Your photo stays private and can be changed here.",
-    analysisAllowance: "AI analysis allowance", analysesLeft: "new meal analyses remaining", unlimited: "Unlimited", unlimitedAnalyses: "AI meal analyses available", unlimitedRegen: "No per-meal regeneration limit for this account.", regenAllowance: "Each meal can be regenerated twice.", analyzeMeal: "Analyze a meal",
+    analysisAllowance: "AI analysis allowance", analysesLeft: "new meal analyses remaining", unlimited: "Unlimited", unlimitedAnalyses: "AI meal analyses available", unlimitedRegen: "No per-meal regeneration limit for this account.", regenAllowance: "Each meal can be regenerated twice.", analyzeMeal: "Analyze a meal", quotaError: "Could not load analysis allowance.", retryQuota: "Try again",
   },
   id: {
     eyebrow: "PROFILMU", member: "Ruang Nourish milikmu", newMember: "Ruangmu dimulai di sini", status: "Rencana pribadi", missing: "Lengkapi profil untuk melihat rencana", start: "Buat rencana", edit: "Ubah rencana", photo: "Ganti foto profil", photoError: "Pilih foto JPG, PNG, atau WebP di bawah 3 MB.", photoSaved: "Foto profil tersimpan.",
     basics: "Data dirimu", age: "Usia", height: "Tinggi", weight: "Berat saat ini", bodyFat: "Lemak tubuh", noData: "Belum diisi", years: "tahun", cm: "cm", kg: "kg",
     direction: "Arah tujuan", goal: "Tujuan", goalWeight: "Berat tujuan", build: "Bentuk tubuh", activity: "Aktivitas harian", minutes: "menit/hari", goals: { lose: "Turunkan berat", maintain: "Jaga berat", gain: "Tambah berat" }, builds: { lean: "Ramping", soft: "Ramping, perut lebih lembut", stocky: "Badan lebar", muscular: "Berotot" }, activities: { daily: "Gerak sehari-hari", cardio: "Kardio", strength: "Latihan beban", mixed: "Campuran" },
     targets: "Target harianmu", targetHint: "Angka bisa diubah. Kalori dan makro tercapai pada 90–105%; serat dan mineral minimal 90%. Natrium adalah batas atas.", targetRange: "Rentang target", targetMinimum: "Minimum", targetLimit: "Batas atas", history: "Riwayat berat", historyHint: "Tampilan harian per bulan", historyTrend: "Berat harian", firstCheckIn: "Catatan pertama", lastCheckIn: "Terakhir dicatat", sinceLast: "Sejak catatan lalu", checkIns: "catatan", emptyHistory: "Belum ada berat tercatat hingga bulan ini.", goalProgress: "Progres target", toGoal: "menuju target", goalLine: "Berat tujuan", previousMonth: "Bulan sebelumnya", nextMonth: "Bulan berikutnya", carriedWeight: "Berat terakhir tercatat", carryHint: "Hari tanpa catatan memakai berat terakhir yang tercatat.", loadingHistory: "Memuat riwayat berat…", historyError: "Riwayat berat gagal dimuat.", retryHistory: "Coba lagi", privacy: "Profil, berat, dan foto tersimpan di akunmu. Foto tetap privat dan bisa diganti di sini.",
-    analysisAllowance: "Jatah analisis AI", analysesLeft: "analisis makanan baru tersisa", unlimited: "Tanpa batas", unlimitedAnalyses: "analisis makanan AI tersedia", unlimitedRegen: "Akun ini tidak memiliki batas analisis ulang per makanan.", regenAllowance: "Setiap makanan bisa dianalisis ulang dua kali.", analyzeMeal: "Analisis makanan",
+    analysisAllowance: "Jatah analisis AI", analysesLeft: "analisis makanan baru tersisa", unlimited: "Tanpa batas", unlimitedAnalyses: "analisis makanan AI tersedia", unlimitedRegen: "Akun ini tidak memiliki batas analisis ulang per makanan.", regenAllowance: "Setiap makanan bisa dianalisis ulang dua kali.", analyzeMeal: "Analisis makanan", quotaError: "Jatah analisis gagal dimuat.", retryQuota: "Coba lagi",
   },
 } as const;
 
@@ -49,6 +49,8 @@ export function ProfilePage() {
   const [monthData, setMonthData] = useState<{ month: string; entries: WeightEntry[]; previous: WeightEntry | null; error: boolean } | null>(null);
   const [historyRetry, setHistoryRetry] = useState(0);
   const [analysisQuota, setAnalysisQuota] = useState<AnalysisQuota | null>(null);
+  const [quotaError, setQuotaError] = useState(false);
+  const [quotaRetry, setQuotaRetry] = useState(0);
   const [clockMs, setClockMs] = useState(() => Date.now());
   const number = new Intl.NumberFormat(language === "id" ? "id-ID" : "en-US", { maximumFractionDigits: 1 });
   const weightUnit = profile.unitSystem === "imperial" ? "lb" : "kg";
@@ -64,9 +66,9 @@ export function ProfilePage() {
 
   useEffect(() => {
     let active = true;
-    void loadAnalysisQuota().then((quota) => { if (active) setAnalysisQuota(quota); }).catch(() => {});
+    void loadAnalysisQuota().then((quota) => { if (active) { setAnalysisQuota(quota); setQuotaError(false); } }).catch(() => { if (active) setQuotaError(true); });
     return () => { active = false; };
-  }, []);
+  }, [quotaRetry]);
   useEffect(() => {
     if (!analysisQuota?.resets_at) return;
     const resetMs = Date.parse(analysisQuota.resets_at);
@@ -74,7 +76,7 @@ export function ProfilePage() {
     const tick = () => {
       const now = Date.now();
       setClockMs(now);
-      if (now >= resetMs) void loadAnalysisQuota().then(setAnalysisQuota).catch(() => {});
+      if (now >= resetMs) void loadAnalysisQuota().then((quota) => { setAnalysisQuota(quota); setQuotaError(false); }).catch(() => setQuotaError(true));
     };
     const interval = window.setInterval(tick, 60_000);
     const resetTimer = window.setTimeout(tick, Math.max(0, resetMs - Date.now()) + 500);
@@ -136,7 +138,7 @@ export function ProfilePage() {
     </section>
 
     <section className="flex flex-wrap items-center justify-between gap-4 rounded-[1.5rem] border border-line bg-surface p-5 shadow-sm sm:p-6" aria-label={text.analysisAllowance}>
-      <div><h2 className="text-lg font-extrabold">{text.analysisAllowance}</h2><p className="mt-1 text-sm text-muted"><strong className="text-xl text-primary">{analysisQuota?.unlimited ? text.unlimited : analysisQuota ? `${analysisQuota.daily_remaining}/${analysisQuota.daily_limit}` : "…"}</strong> {analysisQuota?.unlimited ? text.unlimitedAnalyses : text.analysesLeft}</p><p className="mt-1 text-xs text-muted">{analysisQuota?.unlimited ? text.unlimitedRegen : `${text.regenAllowance} ${resetCountdown}`}</p></div>
+      <div><h2 className="text-lg font-extrabold">{text.analysisAllowance}</h2>{quotaError ? <div role="alert" className="mt-2 flex flex-wrap items-center gap-2 text-sm text-muted"><span>{text.quotaError}</span><button className="btn btn-outline btn-sm rounded-xl" type="button" onClick={() => { setQuotaError(false); setQuotaRetry((value) => value + 1); }}>{text.retryQuota}</button></div> : <><p className="mt-1 text-sm text-muted"><strong className="text-xl text-primary">{analysisQuota?.unlimited ? text.unlimited : analysisQuota ? `${analysisQuota.daily_remaining}/${analysisQuota.daily_limit}` : "…"}</strong> {analysisQuota?.unlimited ? text.unlimitedAnalyses : text.analysesLeft}</p><p className="mt-1 text-xs text-muted">{analysisQuota?.unlimited ? text.unlimitedRegen : `${text.regenAllowance} ${resetCountdown}`}</p></>}</div>
       <Link className="btn btn-outline rounded-xl border-primary/40 text-primary" href="/camera">{text.analyzeMeal}</Link>
     </section>
 

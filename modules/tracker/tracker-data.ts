@@ -25,7 +25,12 @@ let snapshot: TrackerData = empty;
 let loading: Promise<void> | null = null;
 let generation = 0;
 const listeners = new Set<() => void>();
-const subscribeToday = () => () => {};
+const subscribeToday = (listener: () => void) => {
+  // ponytail: Date may update up to 30 seconds after midnight; schedule exact midnight if needed.
+  const timer = window.setInterval(listener, 30_000);
+  window.addEventListener("visibilitychange", listener);
+  return () => { window.clearInterval(timer); window.removeEventListener("visibilitychange", listener); };
+};
 
 export function isValidDate(value: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
