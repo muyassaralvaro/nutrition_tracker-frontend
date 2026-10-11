@@ -1,0 +1,29 @@
+# Nourish
+
+> Nourish is an English and Indonesian nutrition tracker for logging meals, comparing intake with daily targets, and following weight trends.
+
+## How Nourish works
+
+- Sign in with a Google account and set a profile, weight goal, usual activity level, and editable daily nutrition targets.
+- Take or upload a meal photo. AI estimates the portion and nutrition for one whole dish, including calories and nutrients. Review and correct the estimate before saving it.
+- Add a food description to a photo for context, request a revised estimate with more instructions, or describe a meal without a photo.
+- Enter a meal and its nutrition manually when an AI estimate is unnecessary or inaccurate.
+- View daily intake against nutrition targets, past days on a calendar, and recorded weight history.
+
+## Accuracy and access
+
+Photo and text analyses are estimates. Ingredients, preparation, and portion size can change actual nutrition. Users can edit results before saving. Nourish does not provide medical advice.
+
+Personal profiles, meal records, nutrition targets, and weight history require sign-in. Public pages below explain the service and its policies.
+
+## Public pages
+
+- [Homepage](https://nourish.my.id/): Introduction and feature overview.
+- [Sign in](https://nourish.my.id/login): Google sign-in.
+- [Privacy Policy](https://nourish.my.id/privacy): How Nourish handles account, profile, meal, and photo data.
+- [Terms of Service](https://nourish.my.id/terms): Rules for using Nourish.
+- [Sitemap](https://nourish.my.id/sitemap.xml): Public page index.
+
+## Contact
+
+For support or policy questions: support@nourish.my.id
